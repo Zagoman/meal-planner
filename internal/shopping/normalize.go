@@ -40,12 +40,18 @@ func Normalize(s string) string {
 	return strings.Join(words, " ")
 }
 
+// invariant words end in "s" but are already singular.
+var invariant = map[string]bool{
+	"molasses": true, "hummus": true, "couscous": true, "asparagus": true,
+	"swiss": true, "brussels": true, "series": true, "species": true,
+}
+
 func singular(w string) string {
-	if len([]rune(w)) <= 3 {
+	if len([]rune(w)) <= 3 || invariant[w] {
 		return w
 	}
 	switch {
-	case strings.HasSuffix(w, "ies"):
+	case strings.HasSuffix(w, "ies") && len([]rune(w)) > 4: // berries -> berry, but pies -> pie
 		return strings.TrimSuffix(w, "ies") + "y"
 	case strings.HasSuffix(w, "oes"):
 		return strings.TrimSuffix(w, "es")
