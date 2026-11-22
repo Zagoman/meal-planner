@@ -543,19 +543,20 @@ func readSSE(t *testing.T, srvURL, session string) (<-chan sseEvent, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r, _ := http.NewRequestWithContext(ctx, "GET", srvURL+"/list/stream", nil)
 	r.AddCookie(&http.Cookie{Name: web.CookieName, Value: session})
-	res, err := http.DefaultClient.Do(r)
+	res, err := http.DefaultClient.Do(r) //nolint:bodyclose // closed by the reader goroutine below
 	if err != nil {
 		cancel()
 		t.Fatal(err)
 	}
 	if res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != "text/event-stream" {
+		_ = res.Body.Close()
 		cancel()
 		t.Fatalf("stream: %d %q", res.StatusCode, res.Header.Get("Content-Type"))
 	}
 	out := make(chan sseEvent, 16)
 	go func() {
 		defer close(out)
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		sc := bufio.NewScanner(res.Body)
 		sc.Buffer(make([]byte, 1<<20), 1<<20)
 		var ev sseEvent

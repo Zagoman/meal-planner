@@ -1,7 +1,7 @@
 GOBIN := $(shell go env GOPATH)/bin
 export PATH := $(GOBIN):$(PATH)
 
-.PHONY: tools generate check-generated build test lint run dev-db
+.PHONY: tools generate check-generated build test lint run dev-db e2e e2e-server
 
 tools: ## install code generators and linter
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
@@ -30,3 +30,9 @@ dev-db: ## local postgres on :5433 for `make run`
 
 run: ## run against dev-db; reads .env if present
 	set -a; [ -f .env ] && . ./.env; set +a; go run ./cmd/server
+
+e2e: ## Playwright end-to-end test of the web UI (fake services, no DB, no Claude); needs Node
+	cd web/e2e && npm ci --no-audit --no-fund && npx playwright install chromium && npx playwright test
+
+e2e-server: ## the web UI with fake services and seed data on :8090 (see internal/web/e2eserver)
+	go run ./internal/web/e2eserver

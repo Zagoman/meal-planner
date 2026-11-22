@@ -1,0 +1,11 @@
+{
+  "name": "meal-planner-e2e",
+  "private": true,
+  "description": "Playwright end-to-end test of the web UI against the fake-services server (make e2e).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0"
+  }
+}
