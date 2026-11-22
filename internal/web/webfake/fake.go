@@ -293,6 +293,30 @@ func (s *Store) SignUpWithInvite(_ context.Context, token, email, name, password
 	return t, domain.Scope{HouseholdID: inv.householdID, MemberID: m.ID, Role: inv.Role}, nil
 }
 
+// ChangePassword mirrors auth.Service.ChangePassword: the current password
+// must match, and every other session of the member is signed out.
+func (s *Store) ChangePassword(_ context.Context, sc domain.Scope, keepToken, current, next string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.members[sc.MemberID]
+	if m == nil {
+		return fmt.Errorf("change password: %w", domain.ErrUnauthorized)
+	}
+	if m.password == "" || m.password != current {
+		return &domain.ValidationError{Problems: []string{"current password: not correct"}}
+	}
+	if len(next) < 8 {
+		return &domain.ValidationError{Problems: []string{"new password: at least 8 characters"}}
+	}
+	m.password = next
+	for t, ss := range s.sessions {
+		if ss.memberID == m.ID && t != keepToken {
+			delete(s.sessions, t)
+		}
+	}
+	return nil
+}
+
 // --- Households -------------------------------------------------------------
 
 func (s *Store) Create(context.Context, domain.Scope, string, string) (domain.Household, error) {

@@ -116,6 +116,7 @@ func Routes(d app.Deps) http.Handler {
 		r.Post("/household/invites", h.createInvite)
 		r.Post("/household/switch", h.switchHousehold)
 		r.Post("/household/tokens", h.createToken)
+		r.Post("/household/password", h.changePassword)
 		r.Post("/invite/{token}/accept", h.acceptInvite)
 	})
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {

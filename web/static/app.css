@@ -168,6 +168,7 @@ body.cooking .tabs { display: none; }
 .sections form { display: flex; gap: .35rem; }
 
 /* Household */
+p.ok { margin: .75rem 0 0; background: var(--ok-bg); border-radius: 8px; padding: .5rem .75rem; }
 .once { margin-top: .75rem; background: var(--ok-bg); border-radius: 8px; padding: .5rem .75rem; }
 .once p { margin: .25rem 0; }
 .copy-row { display: flex; gap: .5rem; }

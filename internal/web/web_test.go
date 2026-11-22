@@ -656,3 +656,56 @@ func TestStaticAndServiceWorker(t *testing.T) {
 		t.Error("sw scope header missing")
 	}
 }
+
+func TestChangePassword(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	phone := f.session(f.seed.Anna)
+	laptop := f.session(f.seed.Anna)
+
+	rec := f.do(t, req{path: "/household", session: phone})
+	mustContain(t, "household page", rec.Body.String(), "Change password", `name="current_password"`)
+
+	change := func(current, next, confirm string) *httptest.ResponseRecorder {
+		return f.do(t, req{method: "POST", path: "/household/password", session: phone, hx: true,
+			form: url.Values{"current_password": {current}, "new_password": {next}, "confirm_password": {confirm}}})
+	}
+	if rec := change(webfake.SeedPassword, "a new password", "another one"); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("mismatched confirm: %d", rec.Code)
+	} else {
+		mustContain(t, "mismatch", rec.Body.String(), "do not match")
+	}
+	if rec := change("wrong", "a new password", "a new password"); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("wrong current: %d", rec.Code)
+	} else {
+		mustContain(t, "wrong current", rec.Body.String(), "not correct")
+	}
+	if rec := change(webfake.SeedPassword, "a new password", "a new password"); rec.Code != http.StatusOK {
+		t.Fatalf("change: %d %s", rec.Code, rec.Body)
+	} else {
+		mustContain(t, "changed", rec.Body.String(), "Password changed")
+	}
+	ctx := context.Background()
+	if _, err := f.store.SessionScope(ctx, phone); err != nil {
+		t.Errorf("this device was signed out: %v", err)
+	}
+	if _, err := f.store.SessionScope(ctx, laptop); err == nil {
+		t.Error("the other device is still signed in")
+	}
+	email := ""
+	if ms, err := f.store.Members(ctx, f.seed.Anna); err == nil {
+		for _, m := range ms {
+			if m.ID == f.seed.Anna.MemberID {
+				email = m.Email
+			}
+		}
+	}
+	if _, _, err := f.store.Login(ctx, email, "a new password"); err != nil {
+		t.Errorf("login with new password: %v", err)
+	}
+	// Cross-site posts are refused like every other form.
+	if rec := f.do(t, req{method: "POST", path: "/household/password", session: phone, origin: "https://evil.example",
+		form: url.Values{"current_password": {"a new password"}, "new_password": {"pwned pwned"}, "confirm_password": {"pwned pwned"}}}); rec.Code != http.StatusForbidden {
+		t.Errorf("cross-origin change: %d", rec.Code)
+	}
+}

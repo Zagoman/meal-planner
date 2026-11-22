@@ -11,6 +11,8 @@ type householdView struct {
 	Scope       domain.Scope
 	Members     []domain.Member
 	Memberships []domain.Membership
+	// CanChangePassword is true when the Auth service supports it.
+	CanChangePassword bool
 }
 
 templ HouseholdPage(v householdView) {
@@ -80,12 +82,29 @@ templ HouseholdPage(v householdView) {
 			</form>
 			<div id="token-result"></div>
 		</section>
+		if v.CanChangePassword {
+			<section class="card">
+				<h2>Change password</h2>
+				<form class="stack" action="/household/password" method="post" hx-post="/household/password" hx-target="#password-result" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful) this.reset()">
+					<label>Current password <input type="password" name="current_password" required autocomplete="current-password"/></label>
+					<label>New password <input type="password" name="new_password" required minlength="8" maxlength="72" autocomplete="new-password"/></label>
+					<label>New password again <input type="password" name="confirm_password" required minlength="8" maxlength="72" autocomplete="new-password"/></label>
+					<button type="submit">Change password</button>
+				</form>
+				<div id="password-result" role="status"></div>
+			</section>
+		}
 		<section class="card">
 			<form action="/logout" method="post">
 				<button type="submit" class="secondary">Log out</button>
 			</form>
 		</section>
 	}
+}
+
+// PasswordChanged confirms a password change.
+templ PasswordChanged() {
+	<p class="ok">Password changed. Your other devices have been signed out.</p>
 }
 
 // ShownOnce displays a secret (invite link, API token) with a copy button.

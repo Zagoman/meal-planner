@@ -36,6 +36,9 @@ type Querier interface {
 	DeleteInvite(ctx context.Context, arg DeleteInviteParams) error
 	DeleteListItem(ctx context.Context, arg DeleteListItemParams) (int64, error)
 	DeleteMeal(ctx context.Context, arg DeleteMealParams) error
+	// Signs a member out everywhere except the session with this token hash
+	// (used after a password change).
+	DeleteOtherSessions(ctx context.Context, arg DeleteOtherSessionsParams) (int64, error)
 	DeletePantryItems(ctx context.Context, householdID uuid.UUID) error
 	DeleteRecipe(ctx context.Context, arg DeleteRecipeParams) error
 	DeleteSections(ctx context.Context, householdID uuid.UUID) error

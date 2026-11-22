@@ -22,6 +22,31 @@ type InviteSignup interface {
 	SignUpWithInvite(ctx context.Context, inviteToken, email, name, password string) (sessionToken string, s domain.Scope, err error)
 }
 
+// PasswordChanger is implemented by an Auth service that lets a signed-in
+// member change their own password (auth.Service does). The session with
+// keepSessionToken stays signed in; the member's other sessions end.
+type PasswordChanger interface {
+	ChangePassword(ctx context.Context, s domain.Scope, keepSessionToken, current, next string) error
+}
+
+func (h *handlers) changePassword(w http.ResponseWriter, r *http.Request) {
+	pc, ok := h.svc.Auth.(PasswordChanger)
+	if !ok {
+		h.fail(w, r, domain.ErrNotImplemented)
+		return
+	}
+	next := r.PostFormValue("new_password")
+	if next != r.PostFormValue("confirm_password") {
+		h.fail(w, r, &domain.ValidationError{Problems: []string{"new password: the two entries do not match"}})
+		return
+	}
+	if err := pc.ChangePassword(r.Context(), scope(r), sessionToken(r.Context()), r.PostFormValue("current_password"), next); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, http.StatusOK, PasswordChanged())
+}
+
 func (h *handlers) householdPage(w http.ResponseWriter, r *http.Request) {
 	s := scope(r)
 	members, err := h.svc.Households.Members(r.Context(), s)
@@ -34,7 +59,8 @@ func (h *handlers) householdPage(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	v := householdView{Scope: s, Members: members, Memberships: ms, Name: "Your household"}
+	_, canChange := h.svc.Auth.(PasswordChanger)
+	v := householdView{Scope: s, Members: members, Memberships: ms, Name: "Your household", CanChangePassword: canChange}
 	for _, m := range ms {
 		if m.HouseholdID == s.HouseholdID {
 			v.Name = m.HouseholdName
