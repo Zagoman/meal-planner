@@ -145,10 +145,21 @@ make deploy-only
 ```
 
 This checks the stack, the health and the Caddy route without building.
-Then open `https://meals.liluhome.dk` and sign up with the
-`vault_mealplanner_admin_email` address; that member is the server admin
-(`ADMIN_EMAIL`). The sign-up/invite flow itself belongs to package A; see its
-notes if it differs.
+On first start the app creates the `ADMIN_EMAIL` member (server admin) and a
+household "Home", without a password. Set one; it is printed to your terminal
+only, never to the logs:
+
+```bash
+ssh -t lucs@192.168.0.31 docker exec mealplanner /server admin password
+```
+
+Then log in at `https://meals.liluhome.dk`. Run the same command to reset a
+forgotten password (`... admin password someone@example.com` for another
+member). Everyone else joins through an invite link from the Household screen.
+
+Keep Postgres data folders at mode `0700` in `appdata_dirs` (the patch and the
+homelab repo do): Postgres refuses to start on a group/world readable data
+directory.
 
 ## Routine deploy
 
