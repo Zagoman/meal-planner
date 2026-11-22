@@ -1,0 +1,89 @@
+# Meal planner stack for the homelab (/opt/stacks/mealplanner on the server).
+# Canonical copy: Zagoman/meal-planner deploy/stack/. The homelab repo carries
+# an identical copy (deploy/homelab/ has the patch); `make deploy` warns when
+# the server's copy drifts from this one.
+#
+# .env is rendered by Ansible (stack_env.mealplanner): APPDATA_DIR,
+# POSTGRES_PASSWORD, DATABASE_URL, SESSION_SECRET, BASE_URL, ADMIN_EMAIL,
+# ANTHROPIC_API_KEY, CLAUDE_MODEL, TZ.
+name: mealplanner
+
+services:
+  app:
+    image: ghcr.io/zagoman/meal-planner:${MEALPLANNER_TAG:-latest}
+    container_name: mealplanner
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ADDR: ":8080"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      BASE_URL: ${BASE_URL:-https://meals.liluhome.dk}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-5-5}
+      TZ: ${TZ:-Europe/Copenhagen}
+    healthcheck:
+      # distroless: no shell or curl, the binary checks itself.
+      test: ["CMD", "/server", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    # No published ports: Caddy reaches it as mealplanner:8080 on `proxy`.
+    networks:
+      - default
+      - proxy
+
+  db:
+    image: postgres:17
+    container_name: mealplanner-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mealplanner
+      POSTGRES_USER: mealplanner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      TZ: ${TZ:-Europe/Copenhagen}
+    volumes:
+      - ${APPDATA_DIR:?APPDATA_DIR is required}/mealplanner/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mealplanner -d mealplanner"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - default
+
+  # Nightly pg_dump at 03:00 (before restic's 03:30 run) into
+  # ${APPDATA_DIR}/mealplanner/backups, keeping 14 days. Manual dump:
+  #   docker compose exec backup sh /backup.sh now
+  backup:
+    image: postgres:17
+    container_name: mealplanner-backup
+    restart: unless-stopped
+    user: "999:999" # postgres uid in the image; owns the backups dir
+    init: true # forward SIGTERM to the sleeping loop
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["sh", "/backup.sh"]
+    environment:
+      PGHOST: db
+      PGUSER: mealplanner
+      PGDATABASE: mealplanner
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      BACKUP_AT: "03:00"
+      BACKUP_KEEP_DAYS: "14"
+      TZ: ${TZ:-Europe/Copenhagen}
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - ${APPDATA_DIR:?APPDATA_DIR is required}/mealplanner/backups:/backups
+    networks:
+      - default
+
+networks:
+  proxy:
+    external: true
