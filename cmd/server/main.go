@@ -13,11 +13,14 @@ import (
 	"time"
 
 	"github.com/Zagoman/meal-planner/internal/app"
+	"github.com/Zagoman/meal-planner/internal/claude"
 	"github.com/Zagoman/meal-planner/internal/config"
 	"github.com/Zagoman/meal-planner/internal/database"
 	"github.com/Zagoman/meal-planner/internal/events"
+	"github.com/Zagoman/meal-planner/internal/planner"
 	"github.com/Zagoman/meal-planner/internal/server"
 	"github.com/Zagoman/meal-planner/internal/service"
+	"github.com/Zagoman/meal-planner/internal/shopping"
 )
 
 func main() {
@@ -45,12 +48,26 @@ func run() error {
 		return err
 	}
 
+	hub := events.NewHub()
+	services := service.NewUnimplemented()
+
+	// Package B: plans and shopping lists. The real Claude client exists only
+	// when a key is configured; without it, plan generation returns 502.
+	var claudeClient claude.Client
+	if cfg.AnthropicAPIKey != "" {
+		claudeClient = claude.NewAnthropic(cfg.AnthropicAPIKey, cfg.ClaudeModel)
+	} else {
+		slog.Warn("ANTHROPIC_API_KEY is not set: plan generation is disabled")
+	}
+	services.Lists = shopping.New(pool, hub)
+	services.Plans = planner.New(pool, claudeClient, hub, planner.Options{Timeout: cfg.GenerateTimeout})
+
 	deps := app.Deps{
 		Config: cfg,
 		Pool:   pool,
-		// Packages A and B replace these with real implementations.
-		Services: service.NewUnimplemented(),
-		Events:   events.NewHub(),
+		// Package A replaces the remaining unimplemented services.
+		Services: services,
+		Events:   hub,
 	}
 
 	srv := &http.Server{
