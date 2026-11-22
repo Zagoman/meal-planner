@@ -21,6 +21,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" { // package D: container healthcheck
+		os.Exit(healthcheck())
+	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(); err != nil {
 		slog.Error("server stopped", "err", err)

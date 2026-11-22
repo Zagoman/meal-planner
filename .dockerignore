@@ -1,0 +1,12 @@
+.git
+.github
+.claude
+.env
+.env.*
+bin/
+deploy/
+node_modules/
+playwright-report/
+test-results/
+*.test
+coverage.out
