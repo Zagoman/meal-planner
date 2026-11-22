@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -25,8 +26,16 @@ func healthcheck() int {
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
-	client := http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(host, port)+"/healthz", nil) //nolint:gosec // G704: local listener from ADDR
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
+	}
+	// The URL comes from the operator's own ADDR and targets this process.
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: local listener from ADDR
+
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck:", err)
 		return 1
