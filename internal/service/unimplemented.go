@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/lucaszago/meal-planner/internal/domain"
+	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
 // Unimplemented satisfies every service interface and returns

@@ -8,8 +8,8 @@ import (
 	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/lucaszago/meal-planner/internal/app"
-	assets "github.com/lucaszago/meal-planner/web"
+	"github.com/Zagoman/meal-planner/internal/app"
+	assets "github.com/Zagoman/meal-planner/web"
 )
 
 func Routes(_ app.Deps) http.Handler {

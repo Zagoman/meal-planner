@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/lucaszago/meal-planner/internal/app"
-	"github.com/lucaszago/meal-planner/internal/domain"
-	"github.com/lucaszago/meal-planner/internal/httpx"
+	"github.com/Zagoman/meal-planner/internal/app"
+	"github.com/Zagoman/meal-planner/internal/domain"
+	"github.com/Zagoman/meal-planner/internal/httpx"
 )
 
 // Routes is a placeholder until package A lands: every route answers 501.

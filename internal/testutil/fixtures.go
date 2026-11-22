@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/lucaszago/meal-planner/internal/db"
-	"github.com/lucaszago/meal-planner/internal/domain"
+	"github.com/Zagoman/meal-planner/internal/db"
+	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
 // NewHousehold creates a household with a default profile and sections and

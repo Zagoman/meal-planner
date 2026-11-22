@@ -10,10 +10,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/lucaszago/meal-planner/internal/api"
-	"github.com/lucaszago/meal-planner/internal/app"
-	"github.com/lucaszago/meal-planner/internal/openapi"
-	"github.com/lucaszago/meal-planner/internal/web"
+	"github.com/Zagoman/meal-planner/internal/api"
+	"github.com/Zagoman/meal-planner/internal/app"
+	"github.com/Zagoman/meal-planner/internal/openapi"
+	"github.com/Zagoman/meal-planner/internal/web"
 )
 
 // Pinger is the part of the database pool the health check needs.

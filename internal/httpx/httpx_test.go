@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/lucaszago/meal-planner/internal/domain"
+	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
 func TestStatusMapsWrappedErrors(t *testing.T) {

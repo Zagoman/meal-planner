@@ -1,4 +1,4 @@
-module github.com/lucaszago/meal-planner
+module github.com/Zagoman/meal-planner
 
 go 1.27.0
 

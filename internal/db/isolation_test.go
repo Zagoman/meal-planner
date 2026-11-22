@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/lucaszago/meal-planner/internal/db"
-	"github.com/lucaszago/meal-planner/internal/testutil"
+	"github.com/Zagoman/meal-planner/internal/db"
+	"github.com/Zagoman/meal-planner/internal/testutil"
 )
 
 // The schema itself refuses rows that point at another household's parent,

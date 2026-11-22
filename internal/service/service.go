@@ -20,7 +20,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/lucaszago/meal-planner/internal/domain"
+	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
 // Plans generates and changes the week's meals.

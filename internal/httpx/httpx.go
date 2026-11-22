@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/lucaszago/meal-planner/internal/domain"
+	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
 // ErrorBody matches the Error schema in openapi.yaml.

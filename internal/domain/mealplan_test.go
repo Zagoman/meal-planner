@@ -8,7 +8,7 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/lucaszago/meal-planner/internal/domain"
+	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
 func compileSchema(t *testing.T) *jsonschema.Schema {

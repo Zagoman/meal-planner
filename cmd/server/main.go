@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lucaszago/meal-planner/internal/app"
-	"github.com/lucaszago/meal-planner/internal/config"
-	"github.com/lucaszago/meal-planner/internal/database"
-	"github.com/lucaszago/meal-planner/internal/events"
-	"github.com/lucaszago/meal-planner/internal/server"
-	"github.com/lucaszago/meal-planner/internal/service"
+	"github.com/Zagoman/meal-planner/internal/app"
+	"github.com/Zagoman/meal-planner/internal/config"
+	"github.com/Zagoman/meal-planner/internal/database"
+	"github.com/Zagoman/meal-planner/internal/events"
+	"github.com/Zagoman/meal-planner/internal/server"
+	"github.com/Zagoman/meal-planner/internal/service"
 )
 
 func main() {

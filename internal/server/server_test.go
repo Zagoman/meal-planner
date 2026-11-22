@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lucaszago/meal-planner/internal/app"
-	"github.com/lucaszago/meal-planner/internal/events"
-	"github.com/lucaszago/meal-planner/internal/server"
-	"github.com/lucaszago/meal-planner/internal/service"
-	"github.com/lucaszago/meal-planner/internal/testutil"
+	"github.com/Zagoman/meal-planner/internal/app"
+	"github.com/Zagoman/meal-planner/internal/events"
+	"github.com/Zagoman/meal-planner/internal/server"
+	"github.com/Zagoman/meal-planner/internal/service"
+	"github.com/Zagoman/meal-planner/internal/testutil"
 )
 
 type downDB struct{}

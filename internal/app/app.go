@@ -5,9 +5,9 @@ package app
 import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/lucaszago/meal-planner/internal/config"
-	"github.com/lucaszago/meal-planner/internal/events"
-	"github.com/lucaszago/meal-planner/internal/service"
+	"github.com/Zagoman/meal-planner/internal/config"
+	"github.com/Zagoman/meal-planner/internal/events"
+	"github.com/Zagoman/meal-planner/internal/service"
 )
 
 type Deps struct {

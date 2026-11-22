@@ -19,7 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
-	"github.com/lucaszago/meal-planner/internal/database"
+	"github.com/Zagoman/meal-planner/internal/database"
 )
 
 const templateDB = "mp_template"
