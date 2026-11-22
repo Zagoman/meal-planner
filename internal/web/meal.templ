@@ -1,0 +1,96 @@
+package web
+
+import "github.com/Zagoman/meal-planner/internal/domain"
+
+templ MealPage(m domain.Meal) {
+	@Layout(m.Title, TabRecipe) {
+		<p class="meta">
+			if m.Day != "" {
+				{ dayName(m.Day) } ·
+			}
+			{ itoa(m.Minutes) } min · { itoa(m.Servings) } servings
+			if m.OnePot {
+				· one pot
+			}
+		</p>
+		<p><button type="button" class="big" data-cook-open>👩‍🍳 Cook mode</button></p>
+		<section class="card">
+			<h2>Ingredients</h2>
+			<ul class="ingredients">
+				for _, ing := range m.Ingredients {
+					<li class={ templ.KV("after-baby", afterBaby(m, ing)) }>
+						<span class="qty">{ qty(ing.Qty, ing.Unit) }</span>
+						{ ing.Name }
+						if afterBaby(m, ing) {
+							<span class="tag baby">after baby portion</span>
+						}
+					</li>
+				}
+			</ul>
+			if extra := extraAfterBaby(m); len(extra) > 0 {
+				<p class="small">
+					<span class="tag baby">after baby portion</span>
+					for i, e := range extra {
+						if i > 0 {
+							,
+						}
+						{ e }
+					}
+				</p>
+			}
+		</section>
+		<section class="card">
+			<h2>Steps</h2>
+			<ol class="steps">
+				for _, st := range m.Steps {
+					<li class={ "step", templ.KV("baby", st.BabyPortion) }>
+						if st.BabyPortion {
+							<strong class="tag baby">👶 Baby portion</strong>
+						}
+						<span>{ st.Text }</span>
+						if st.TimerMin != nil {
+							@TimerButton(*st.TimerMin)
+						}
+					</li>
+				}
+			</ol>
+		</section>
+		<details class="card rate">
+			<summary>Rate this meal</summary>
+			@RateForm(m.ID)
+		</details>
+		@CookMode(m)
+	}
+}
+
+// CookMode is a full-screen, one-step-at-a-time view. app.js shows it,
+// moves between steps and holds a Screen Wake Lock while it is open.
+templ CookMode(m domain.Meal) {
+	<div id="cook" class="cook" hidden role="dialog" aria-modal="true" aria-label={ "Cook mode: " + m.Title }>
+		<div class="cook-bar">
+			<span data-cook-pos>1 / { itoa(len(m.Steps)) }</span>
+			<span class="muted small" data-wake-status></span>
+			<button type="button" class="secondary" data-cook-close>Close</button>
+		</div>
+		for i, st := range m.Steps {
+			<section class={ "cook-step", templ.KV("baby", st.BabyPortion) } data-step={ itoa(i) } hidden?={ i > 0 }>
+				<p class="cook-num">Step { itoa(i + 1) } of { itoa(len(m.Steps)) }</p>
+				if st.BabyPortion {
+					<p class="tag baby big">👶 Take out the baby's portion</p>
+				}
+				<p class="cook-text">{ st.Text }</p>
+				if st.TimerMin != nil {
+					@TimerButton(*st.TimerMin)
+				}
+			</section>
+		}
+		<div class="cook-nav">
+			<button type="button" class="secondary" data-cook-prev>← Back</button>
+			<button type="button" data-cook-next>Next →</button>
+		</div>
+	</div>
+}
+
+templ TimerButton(minutes int) {
+	<button type="button" class="timer" data-timer-min={ itoa(minutes) }>⏱ { itoa(minutes) } min timer</button>
+}

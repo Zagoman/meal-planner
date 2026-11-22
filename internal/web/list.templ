@@ -1,0 +1,109 @@
+package web
+
+import (
+	"strconv"
+
+	"github.com/Zagoman/meal-planner/internal/domain"
+)
+
+templ ListPage(l domain.List, hasPlan bool, sections []domain.Section) {
+	@Layout("Shopping list", TabList) {
+		if !hasPlan {
+			<div class="empty">
+				<p>No plan this week yet, so there's no list.</p>
+				<p><a class="button" href="/week">Plan the week</a></p>
+			</div>
+		} else {
+			<div id="list-live" hx-ext="sse" sse-connect="/list/stream">
+				<div id="list" sse-swap="list" hx-swap="innerHTML">
+					@ListBody(l)
+				</div>
+			</div>
+			@AddItemForm(sections)
+		}
+	}
+}
+
+// ListBody is every section; it is what the SSE stream sends on each change.
+templ ListBody(l domain.List) {
+	{{ done, total := countChecked(l) }}
+	<p class="progress muted" data-done={ itoa(done) } data-total={ itoa(total) }>
+		{ itoa(done) } of { itoa(total) } in the basket
+	</p>
+	for _, sec := range l.Sections {
+		<section
+			class={ "sec", templ.KV("pantry", sec.Key == domain.PantryCheckSection) }
+			id={ "sec-" + sec.Key }
+		>
+			<h2>{ sec.Name }</h2>
+			if sec.Key == domain.PantryCheckSection {
+				<p class="muted small">You usually have these. Check before buying.</p>
+			}
+			<ul class="items">
+				for _, it := range sec.Items {
+					@Item(it)
+				}
+			</ul>
+		</section>
+	}
+}
+
+// Item is one row; ticking swaps just this element.
+templ Item(it domain.ListItem) {
+	<li id={ "item-" + it.ID.String() } class={ "item", templ.KV("checked", it.Checked) }>
+		<button
+			type="button"
+			class="tick"
+			hx-post={ "/list/items/" + it.ID.String() + "/check" }
+			hx-vals={ checkVals(it) }
+			hx-target="closest li"
+			hx-swap="outerHTML"
+			data-item-id={ it.ID.String() }
+			data-checked={ strconv.FormatBool(it.Checked) }
+			aria-pressed={ strconv.FormatBool(it.Checked) }
+		>
+			<span class="box" aria-hidden="true"></span>
+			<span class="name">{ it.Name }</span>
+			if it.QtyText != "" || it.NeedText != "" {
+				<span class="need">
+					if it.QtyText != "" {
+						<strong>{ it.QtyText }</strong>
+					}
+					{ it.NeedText }
+				</span>
+			}
+		</button>
+		if it.IsManual {
+			<button
+				type="button"
+				class="del"
+				hx-post={ "/list/items/" + it.ID.String() + "/delete" }
+				hx-target="closest li"
+				hx-swap="outerHTML"
+				aria-label={ "Remove " + it.Name }
+			>×</button>
+		}
+	</li>
+}
+
+templ AddItemForm(sections []domain.Section) {
+	<form
+		class="add card"
+		action="/list/items"
+		method="post"
+		hx-post="/list/items"
+		hx-target="#list"
+		hx-swap="innerHTML"
+		hx-on::after-request="if (event.detail.successful) { this.reset(); this.querySelector('input').focus() }"
+	>
+		<label class="visually-hidden" for="add-name">Item</label>
+		<input id="add-name" name="name" required maxlength="100" placeholder="Add an item" autocomplete="off"/>
+		<label class="visually-hidden" for="add-section">Section</label>
+		<select id="add-section" name="section">
+			for _, s := range sections {
+				<option value={ s.Key } selected?={ s.Key == "other" }>{ s.Name }</option>
+			}
+		</select>
+		<button type="submit">Add</button>
+	</form>
+}

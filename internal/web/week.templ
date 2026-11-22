@@ -1,0 +1,131 @@
+package web
+
+import (
+	"github.com/google/uuid"
+
+	"github.com/Zagoman/meal-planner/internal/domain"
+)
+
+templ WeekPage(p domain.Plan, hasPlan bool) {
+	@Layout("This week", TabWeek) {
+		@GenerateForm(hasPlan)
+		@WeekBody(p, hasPlan)
+	}
+}
+
+// GenerateForm posts the prompt. While the request runs (up to a minute),
+// #gen-progress is shown with an elapsed-seconds counter (app.js). On
+// failure the server answers with a flash message and #week, the current
+// plan, is left as it was.
+templ GenerateForm(hasPlan bool) {
+	<form
+		id="generate"
+		class="card generate"
+		action="/week/generate"
+		method="post"
+		hx-post="/week/generate"
+		hx-target="#week"
+		hx-swap="outerHTML"
+		hx-indicator="#gen-progress"
+		hx-disabled-elt="find button, find textarea"
+	>
+		<label for="prompt">What should we eat this week?</label>
+		<textarea id="prompt" name="prompt" rows="3" maxlength="2000" placeholder="E.g. quick dinners, fish twice, something special on Saturday"></textarea>
+		<button type="submit">
+			if hasPlan {
+				Make a new plan
+			} else {
+				Plan the week
+			}
+		</button>
+		<div id="gen-progress" class="htmx-indicator gen-progress" role="status">
+			<span class="spinner" aria-hidden="true"></span>
+			Planning meals… <span data-elapsed>0</span> s
+			<span class="muted small">This can take up to a minute. Your current plan stays until the new one is ready.</span>
+		</div>
+	</form>
+}
+
+templ WeekBody(p domain.Plan, hasPlan bool) {
+	<div id="week">
+		if !hasPlan {
+			<p class="empty muted">No plan yet. Tell us what you fancy above.</p>
+		} else {
+			<p class="muted small">Week of { p.WeekStart.Format("Mon 2 Jan") }</p>
+			for _, m := range p.Meals {
+				@MealCard(p.ID, m)
+			}
+		}
+	</div>
+}
+
+templ MealCard(planID uuid.UUID, m domain.Meal) {
+	<article class="meal card" id={ "meal-" + string(m.Day) }>
+		<header>
+			<span class="day">{ dayName(m.Day) }</span>
+			<h2><a href={ templ.SafeURL("/meals/" + m.ID.String()) }>{ m.Title }</a></h2>
+		</header>
+		<p class="meta">
+			{ itoa(m.Minutes) } min · { proteinLabel(m.Protein) }
+			if m.OnePot {
+				· one pot
+			}
+		</p>
+		<div class="actions">
+			<details class="swap">
+				<summary>Swap</summary>
+				<form
+					action="/week/swap"
+					method="post"
+					hx-post="/week/swap"
+					hx-target="closest article"
+					hx-swap="outerHTML"
+					hx-disabled-elt="find button"
+				>
+					<input type="hidden" name="plan_id" value={ planID.String() }/>
+					<input type="hidden" name="day" value={ string(m.Day) }/>
+					<label class="visually-hidden" for={ "swap-" + string(m.Day) }>What instead?</label>
+					<input id={ "swap-" + string(m.Day) } name="prompt" maxlength="500" placeholder="What instead? (optional)"/>
+					<button type="submit">Swap meal</button>
+					<span class="htmx-indicator muted small">Finding another meal…</span>
+				</form>
+			</details>
+			<details class="rate">
+				<summary>Rate</summary>
+				@RateForm(m.ID)
+			</details>
+		</div>
+	</article>
+}
+
+templ RateForm(mealID uuid.UUID) {
+	<form
+		class="rate-form"
+		action={ templ.SafeURL("/meals/" + mealID.String() + "/rate") }
+		method="post"
+		hx-post={ "/meals/" + mealID.String() + "/rate" }
+		hx-swap="outerHTML"
+	>
+		<fieldset class="stars">
+			<legend>How was it?</legend>
+			for i := 1; i <= 5; i++ {
+				<label>
+					<input type="radio" name="rating" value={ itoa(i) } required/>
+					<span>{ itoa(i) }</span>
+				</label>
+			}
+		</fieldset>
+		<label class="visually-hidden" for={ "note-" + mealID.String() }>Note</label>
+		<input id={ "note-" + mealID.String() } name="note" maxlength="500" placeholder="Note (optional), e.g. baby loved it"/>
+		<button type="submit">Save rating</button>
+	</form>
+}
+
+templ Rated(f domain.Feedback) {
+	<p class="rated">
+		Rated { itoa(f.Rating) }/5 ✓
+		if f.Note != "" {
+			<span class="muted">“{ f.Note }”</span>
+		}
+	</p>
+}

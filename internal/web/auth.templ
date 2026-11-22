@@ -1,0 +1,31 @@
+package web
+
+templ LoginPage(next, email, errMsg string) {
+	@Layout("Log in", TabNone) {
+		if errMsg != "" {
+			<div class="flash error" role="alert"><p>{ errMsg }</p></div>
+		}
+		<section class="card">
+			@LoginForm(next, email)
+		</section>
+	}
+}
+
+templ LoginForm(next, email string) {
+	<form class="stack" action="/login" method="post">
+		<input type="hidden" name="next" value={ next }/>
+		<label>Email <input type="email" name="email" required autocomplete="username" value={ email }/></label>
+		<label>Password <input type="password" name="password" required autocomplete="current-password"/></label>
+		<button type="submit">Log in</button>
+	</form>
+}
+
+templ LogoutPage() {
+	@Layout("Log out", tabOther) {
+		<section class="card">
+			<form action="/logout" method="post">
+				<button type="submit">Log out</button>
+			</form>
+		</section>
+	}
+}

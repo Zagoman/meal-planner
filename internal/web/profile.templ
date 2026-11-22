@@ -1,0 +1,123 @@
+package web
+
+import (
+	"strings"
+
+	"github.com/Zagoman/meal-planner/internal/domain"
+)
+
+var spiceLevels = []domain.SpiceLevel{domain.SpiceNone, domain.SpiceMild, domain.SpiceMedium, domain.SpiceHot}
+
+var proteins = []domain.Protein{domain.ProteinChicken, domain.ProteinFish, domain.ProteinVegetarian, domain.ProteinOther}
+
+templ ProfilePage(p domain.Profile, sections []domain.Section, pantry []domain.PantryItem) {
+	@Layout("Profile", TabProfile) {
+		<section class="card">
+			<h2>Preferences</h2>
+			@PrefsForm(p, false)
+		</section>
+		<section class="card">
+			<h2>Shop sections</h2>
+			<p class="muted small">Put them in the order you walk through the shop. The list follows this order.</p>
+			@SectionsList(sections)
+		</section>
+		<section class="card">
+			<h2>Pantry</h2>
+			@PantryForm(pantry, false)
+		</section>
+	}
+}
+
+templ PrefsForm(p domain.Profile, saved bool) {
+	<form id="prefs" class="stack" action="/profile" method="post" hx-post="/profile" hx-swap="outerHTML">
+		<div class="row">
+			<label>
+				Dinners per week
+				<input type="number" name="dinners_per_week" min="1" max="7" required value={ itoa(p.DinnersPerWeek) }/>
+			</label>
+			<label>
+				Servings
+				<input type="number" name="servings" min="1" max="12" required value={ itoa(p.Servings) }/>
+			</label>
+		</div>
+		<fieldset>
+			<legend>Dinners per week by protein</legend>
+			<div class="row">
+				for _, pr := range proteins {
+					<label>
+						{ string(pr) }
+						<input type="number" name={ "protein_" + string(pr) } min="0" max="7" value={ itoa(p.ProteinMix[pr]) }/>
+					</label>
+				}
+			</div>
+		</fieldset>
+		<label>
+			Spice
+			<select name="spice_level">
+				for _, s := range spiceLevels {
+					<option value={ string(s) } selected?={ s == p.SpiceLevel }>{ string(s) }</option>
+				}
+			</select>
+		</label>
+		<label class="check"><input type="checkbox" name="one_pot" value="on" checked?={ p.OnePot }/> One-pot meals only</label>
+		<label class="check"><input type="checkbox" name="baby_portions" value="on" checked?={ p.BabyPortions }/> Take out a baby portion before salt, stock and cheese</label>
+		<label>
+			Never use (one per line)
+			<textarea name="avoid" rows="3">{ strings.Join(p.Avoid, "\n") }</textarea>
+		</label>
+		<div class="row">
+			<label>
+				Shop
+				<input name="shop" maxlength="100" value={ p.Shop }/>
+			</label>
+			<label>
+				Shopping day
+				<select name="shopping_day">
+					for _, d := range domain.Weekdays {
+						<option value={ string(d) } selected?={ d == p.ShoppingDay }>{ dayName(d) }</option>
+					}
+				</select>
+			</label>
+		</div>
+		<label>
+			Recipe language
+			<input name="language" maxlength="20" value={ p.Language } placeholder="en"/>
+		</label>
+		<div class="row end">
+			if saved {
+				<span class="saved" role="status">Saved ✓</span>
+			}
+			<button type="submit">Save preferences</button>
+		</div>
+	</form>
+}
+
+templ SectionsList(sections []domain.Section) {
+	<ol id="sections" class="sections">
+		for i, s := range sections {
+			<li data-key={ s.Key }>
+				<span class="name">{ s.Name }</span>
+				<form action="/profile/sections/move" method="post" hx-post="/profile/sections/move" hx-target="#sections" hx-swap="outerHTML">
+					<input type="hidden" name="key" value={ s.Key }/>
+					<button type="submit" name="dir" value="up" class="icon" disabled?={ i == 0 } aria-label={ "Move " + s.Name + " up" }>↑</button>
+					<button type="submit" name="dir" value="down" class="icon" disabled?={ i == len(sections)-1 } aria-label={ "Move " + s.Name + " down" }>↓</button>
+				</form>
+			</li>
+		}
+	</ol>
+}
+
+templ PantryForm(pantry []domain.PantryItem, saved bool) {
+	<form id="pantry" class="stack" action="/profile/pantry" method="post" hx-post="/profile/pantry" hx-swap="outerHTML">
+		<label>
+			Things you always have at home (one per line). They go in a “check the pantry” section at the end of the list.
+			<textarea name="pantry" rows="6">{ pantryText(pantry) }</textarea>
+		</label>
+		<div class="row end">
+			if saved {
+				<span class="saved" role="status">Saved ✓</span>
+			}
+			<button type="submit">Save pantry</button>
+		</div>
+	</form>
+}

@@ -44,11 +44,11 @@ func TestSkeletonRoutes(t *testing.T) {
 		wantCode       int
 		wantBody       string
 	}{
-		{"/", "text/html", 200, `hx-boost="true"`},
+		{"/login", "text/html", 200, `hx-boost="true"`},
 		{"/static/htmx.min.js", "javascript", 200, "htmx"},
 		{"/sw.js", "javascript", 200, "skipWaiting"},
 		{"/api/openapi.yaml", "yaml", 200, "openapi: 3.1.0"},
-		{"/api/plans/current", "application/json", 501, `"not_implemented"`},
+		{"/api/plans/current", "application/json", 401, `"unauthorized"`},
 	}
 	for _, c := range cases {
 		rec := httptest.NewRecorder()
@@ -57,5 +57,12 @@ func TestSkeletonRoutes(t *testing.T) {
 			!strings.Contains(rec.Body.String(), c.wantBody) {
 			t.Errorf("%s: code=%d type=%q body=%.80q", c.path, rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
 		}
+	}
+
+	// The web UI needs a session: an anonymous "/" goes to the login page.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
+		t.Errorf("/: code=%d location=%q, want 303 /login", rec.Code, rec.Header().Get("Location"))
 	}
 }

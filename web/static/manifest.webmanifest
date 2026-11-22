@@ -2,8 +2,11 @@
   "name": "Meal Planner",
   "short_name": "Meals",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#fbfaf7",
   "theme_color": "#2f6f4f",
-  "icons": []
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
 }
