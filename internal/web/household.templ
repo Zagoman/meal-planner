@@ -1,0 +1,131 @@
+package web
+
+import (
+	"net/url"
+
+	"github.com/Zagoman/meal-planner/internal/domain"
+)
+
+type householdView struct {
+	Name        string
+	Scope       domain.Scope
+	Members     []domain.Member
+	Memberships []domain.Membership
+}
+
+templ HouseholdPage(v householdView) {
+	@Layout("Household", TabHousehold) {
+		<section class="card">
+			<h2>{ v.Name }</h2>
+			<ul class="members">
+				for _, m := range v.Members {
+					<li>
+						<span class="name">{ m.Name }</span>
+						<span class="muted small">{ m.Email }</span>
+						if m.Role == domain.RoleAdmin {
+							<span class="tag">admin</span>
+						}
+						if m.ID == v.Scope.MemberID {
+							<span class="tag">you</span>
+						}
+					</li>
+				}
+			</ul>
+		</section>
+		if v.Scope.IsHouseholdAdmin() {
+			<section class="card">
+				<h2>Invite someone</h2>
+				<form class="row" action="/household/invites" method="post" hx-post="/household/invites" hx-target="#invite-result" hx-swap="innerHTML">
+					<label>
+						Role
+						<select name="role">
+							<option value="member" selected>Member</option>
+							<option value="admin">Admin</option>
+						</select>
+					</label>
+					<button type="submit">Create invite link</button>
+				</form>
+				<div id="invite-result"></div>
+			</section>
+		}
+		if len(v.Memberships) > 1 {
+			<section class="card">
+				<h2>Your households</h2>
+				<ul class="households">
+					for _, m := range v.Memberships {
+						<li>
+							<span class="name">{ m.HouseholdName }</span>
+							if m.HouseholdID == v.Scope.HouseholdID {
+								<span class="tag">current</span>
+							} else {
+								<form action="/household/switch" method="post">
+									<input type="hidden" name="household_id" value={ m.HouseholdID.String() }/>
+									<button type="submit" class="secondary">Switch</button>
+								</form>
+							}
+						</li>
+					}
+				</ul>
+			</section>
+		}
+		<section class="card">
+			<h2>API tokens</h2>
+			<p class="muted small">For scripts that use the JSON API. A token acts as you in this household.</p>
+			<form class="row" action="/household/tokens" method="post" hx-post="/household/tokens" hx-target="#token-result" hx-swap="innerHTML">
+				<label>
+					Name
+					<input name="name" required maxlength="60" placeholder="e.g. kitchen tablet"/>
+				</label>
+				<button type="submit">Create token</button>
+			</form>
+			<div id="token-result"></div>
+		</section>
+		<section class="card">
+			<form action="/logout" method="post">
+				<button type="submit" class="secondary">Log out</button>
+			</form>
+		</section>
+	}
+}
+
+// ShownOnce displays a secret (invite link, API token) with a copy button.
+templ ShownOnce(label, value string) {
+	<div class="once">
+		<p>{ label }</p>
+		<div class="copy-row">
+			<input readonly value={ value } aria-label={ label } data-copy-source/>
+			<button type="button" data-copy>Copy</button>
+		</div>
+		<p class="muted small">It is shown only once. Copy it now.</p>
+	</div>
+}
+
+templ InvitePage(token string, signedIn, canSignup bool) {
+	@Layout("Join a household", tabIf(signedIn)) {
+		if signedIn {
+			<section class="card">
+				<p>You've been invited to join a household. You can switch between households on the Household tab.</p>
+				<form action={ templ.SafeURL("/invite/" + url.PathEscape(token) + "/accept") } method="post">
+					<button type="submit" class="big">Join household</button>
+				</form>
+			</section>
+		} else {
+			<p>You've been invited to join a household on Meal Planner.</p>
+			<section class="card">
+				<h2>I have an account</h2>
+				@LoginForm("/invite/"+token, "")
+			</section>
+			if canSignup {
+				<section class="card">
+					<h2>I'm new here</h2>
+					<form class="stack" action={ templ.SafeURL("/invite/" + url.PathEscape(token) + "/signup") } method="post">
+						<label>Your name <input name="name" required maxlength="60" autocomplete="name"/></label>
+						<label>Email <input type="email" name="email" required autocomplete="email"/></label>
+						<label>Password <input type="password" name="password" required minlength="8" autocomplete="new-password"/></label>
+						<button type="submit">Create account and join</button>
+					</form>
+				</section>
+			}
+		}
+	}
+}
