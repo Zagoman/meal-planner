@@ -1,0 +1,33 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - noctx
+    - revive
+    - sqlclosecheck
+    - unconvert
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    generated: strict
+    paths:
+      - internal/db/.*\.sql\.go
+      - internal/db/models\.go
+      - internal/db/querier\.go
+      - internal/db/db\.go
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx]
+formatters:
+  enable: [gofmt, goimports]
+  settings:
+    goimports:
+      local-prefixes: [github.com/lucaszago/meal-planner]

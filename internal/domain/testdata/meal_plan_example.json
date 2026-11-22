@@ -1,0 +1,23 @@
+{
+  "meals": [{
+    "day": "monday",
+    "title": "One-pot chicken and rice",
+    "protein": "chicken",
+    "minutes": 35,
+    "one_pot": true,
+    "servings": 2,
+    "ingredients": [
+      {"name": "chicken thighs", "normalized_name": "chicken thigh", "qty": 500, "unit": "g", "section": "meat_fish"},
+      {"name": "onions, chopped", "normalized_name": "onion", "qty": 2, "unit": "pcs", "section": "produce"},
+      {"name": "long-grain rice", "normalized_name": "rice", "qty": 200, "unit": "g", "section": "dry_goods"},
+      {"name": "stock cube", "normalized_name": "stock cube", "qty": 1, "unit": "pcs", "section": "spices"}
+    ],
+    "steps": [
+      {"text": "Brown the chicken and onions in a large pot.", "timer_min": 8, "baby_portion": false},
+      {"text": "Add the rice and 500 ml water, cover and simmer.", "timer_min": 18, "baby_portion": false},
+      {"text": "Take out the baby's portion now.", "timer_min": null, "baby_portion": true},
+      {"text": "Crumble in the stock cube, season with salt and serve.", "timer_min": null, "baby_portion": false}
+    ],
+    "after_baby_portion": ["stock cube", "salt"]
+  }]
+}

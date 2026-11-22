@@ -1,0 +1,447 @@
+openapi: 3.1.0
+info:
+  title: Meal Planner API
+  version: 0.1.0
+  description: |
+    JSON API for scripts, curl and the MCP server. The web UI calls the same
+    service layer through its own routes.
+
+    Every route is scoped to the household of the caller's bearer token.
+    A resource that belongs to another household returns 404, never 403.
+    Errors always use the Error schema.
+servers:
+  - url: /api
+security:
+  - bearer: []
+
+paths:
+  /plans:
+    post:
+      summary: Generate a new plan for the week
+      description: |
+        Calls Claude with the household profile, the last 8 weeks of
+        feedback and the prompt. Takes up to 60 seconds. On failure the
+        previous plan stays active and 502 is returned.
+      operationId: createPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PromptRequest'}
+      responses:
+        '201': {description: The new active plan, content: {application/json: {schema: {$ref: '#/components/schemas/Plan'}}}}
+        '422': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+  /plans/current:
+    get:
+      summary: The active plan
+      operationId: getCurrentPlan
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Plan'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+  /plans/{plan_id}/meals/{day}/swap:
+    post:
+      summary: Replace one day's meal
+      operationId: swapMeal
+      parameters:
+        - {$ref: '#/components/parameters/PlanID'}
+        - name: day
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/Weekday'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PromptRequest'}
+      responses:
+        '200': {description: The new meal, content: {application/json: {schema: {$ref: '#/components/schemas/Meal'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+        '502': {$ref: '#/components/responses/Error'}
+  /meals/{meal_id}:
+    get:
+      summary: One meal with ingredients and steps
+      operationId: getMeal
+      parameters: [{$ref: '#/components/parameters/MealID'}]
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Meal'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+  /meals/{meal_id}/substitute:
+    post:
+      summary: Replace an ingredient in a meal
+      operationId: substituteIngredient
+      parameters: [{$ref: '#/components/parameters/MealID'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: {type: string, example: cream}
+                to: {type: string, example: coconut milk}
+      responses:
+        '200': {description: The updated meal, content: {application/json: {schema: {$ref: '#/components/schemas/Meal'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+  /list/active:
+    get:
+      summary: The active plan's shopping list, grouped by section
+      operationId: getActiveList
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/List'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+  /list/stream:
+    get:
+      summary: Live list changes (Server-Sent Events)
+      description: |
+        `text/event-stream`. Event names: `item` (data is a ListItem),
+        `deleted` (data is {"id": "..."}), `list` (data is a List).
+        A comment line is sent every 25 s as a keep-alive.
+      operationId: streamList
+      responses:
+        '200': {description: Event stream, content: {text/event-stream: {schema: {type: string}}}}
+  /list/items:
+    post:
+      summary: Add a manual item
+      operationId: addListItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, example: toilet paper}
+                section: {type: string, description: Section key; defaults to "other", example: other}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/ListItem'}}}}
+        '422': {$ref: '#/components/responses/Error'}
+  /list/items/{item_id}:
+    parameters: [{$ref: '#/components/parameters/ItemID'}]
+    patch:
+      summary: Tick or untick an item
+      operationId: updateListItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checked]
+              properties:
+                checked: {type: boolean}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/ListItem'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+    delete:
+      summary: Remove an item
+      operationId: deleteListItem
+      responses:
+        '204': {description: Deleted}
+        '404': {$ref: '#/components/responses/Error'}
+
+  /profile:
+    get:
+      operationId: getProfile
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Profile'}}}}
+    put:
+      operationId: putProfile
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/Profile'}}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/Profile'}}}}
+        '422': {$ref: '#/components/responses/Error'}
+  /sections:
+    get:
+      operationId: getSections
+      responses:
+        '200': {description: In shop order, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Section'}}}}}
+    put:
+      summary: Replace the section list; array order is the shop order
+      operationId: putSections
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Section'}}}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Section'}}}}}
+        '422': {$ref: '#/components/responses/Error'}
+  /pantry:
+    get:
+      operationId: getPantry
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/PantryItem'}}}}}
+    put:
+      summary: Replace the pantry list
+      operationId: putPantry
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: array, items: {type: string}, example: [salt, olive oil, rice]}}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/PantryItem'}}}}}
+
+  /feedback:
+    post:
+      operationId: rateMeal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [meal_id, rating]
+              properties:
+                meal_id: {type: string, format: uuid}
+                rating: {type: integer, minimum: 1, maximum: 5}
+                note: {type: string}
+      responses:
+        '201': {description: Saved, content: {application/json: {schema: {$ref: '#/components/schemas/Feedback'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+  /households:
+    post:
+      summary: Create a household (server admin only)
+      operationId: createHousehold
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, admin_email]
+              properties:
+                name: {type: string}
+                admin_email: {type: string, format: email}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Household'}}}}
+        '403': {$ref: '#/components/responses/Error'}
+  /households/{household_id}/invites:
+    post:
+      summary: Create a one-time invite (household admin; must be the caller's household)
+      operationId: createInvite
+      parameters:
+        - name: household_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: {$ref: '#/components/schemas/Role'}
+      responses:
+        '201': {description: Created; token and url are only returned here, content: {application/json: {schema: {$ref: '#/components/schemas/Invite'}}}}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /invites/{token}/accept:
+    post:
+      summary: Join the invite's household as the calling member
+      operationId: acceptInvite
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200': {description: Joined, content: {application/json: {schema: {$ref: '#/components/schemas/Membership'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+  /admin/usage:
+    get:
+      summary: Token usage per household (server admin only)
+      operationId: getUsage
+      parameters:
+        - name: since
+          in: query
+          schema: {type: string, format: date}
+          description: Defaults to 30 days ago
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/UsageRow'}}}}}
+        '403': {$ref: '#/components/responses/Error'}
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: An API token created in the web UI (Household screen).
+  parameters:
+    PlanID: {name: plan_id, in: path, required: true, schema: {type: string, format: uuid}}
+    MealID: {name: meal_id, in: path, required: true, schema: {type: string, format: uuid}}
+    ItemID: {name: item_id, in: path, required: true, schema: {type: string, format: uuid}}
+  responses:
+    Error:
+      description: Error
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string, description: Short machine-readable code, enum: [not_found, unauthorized, forbidden, invalid_input, conflict, generation_failed, not_implemented, internal]}
+        message: {type: string}
+        problems: {type: array, items: {type: string}}
+    PromptRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: {type: string, maxLength: 2000, example: 3 mild one-pot dinners, chicken, fish, veg}
+    Weekday:
+      type: string
+      enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+    Protein:
+      type: string
+      enum: [chicken, fish, vegetarian, other]
+    Role:
+      type: string
+      enum: [admin, member]
+    Plan:
+      type: object
+      required: [id, week_start, status, prompt, created_at, meals]
+      properties:
+        id: {type: string, format: uuid}
+        week_start: {type: string, format: date-time}
+        status: {type: string, enum: [draft, active, archived]}
+        prompt: {type: string}
+        created_at: {type: string, format: date-time}
+        meals: {type: array, items: {$ref: '#/components/schemas/Meal'}}
+    Meal:
+      type: object
+      required: [id, day, title, protein, minutes, one_pot, servings, ingredients, steps, after_baby_portion]
+      properties:
+        id: {type: string, format: uuid}
+        day: {$ref: '#/components/schemas/Weekday'}
+        title: {type: string}
+        protein: {$ref: '#/components/schemas/Protein'}
+        minutes: {type: integer}
+        one_pot: {type: boolean}
+        servings: {type: integer}
+        ingredients: {type: array, items: {$ref: '#/components/schemas/Ingredient'}}
+        steps: {type: array, items: {$ref: '#/components/schemas/Step'}}
+        after_baby_portion: {type: array, items: {type: string}}
+    Ingredient:
+      type: object
+      required: [id, name, normalized_name, qty, unit, section]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        normalized_name: {type: string}
+        qty: {type: number}
+        unit: {type: string}
+        section: {type: string}
+    Step:
+      type: object
+      required: [text, baby_portion]
+      properties:
+        text: {type: string}
+        timer_min: {type: integer}
+        baby_portion: {type: boolean}
+    ListItem:
+      type: object
+      required: [id, plan_id, name, qty_text, need_text, section, checked, is_manual]
+      properties:
+        id: {type: string, format: uuid}
+        plan_id: {type: string, format: uuid}
+        name: {type: string, example: Onions}
+        qty_text: {type: string, example: 1 net}
+        need_text: {type: string, example: need 3}
+        section: {type: string}
+        checked: {type: boolean}
+        checked_by: {type: string, format: uuid}
+        is_manual: {type: boolean}
+    List:
+      type: object
+      required: [plan_id, sections]
+      properties:
+        plan_id: {type: string, format: uuid}
+        sections:
+          type: array
+          description: In the household's shop order; "pantry_check" is always last
+          items:
+            type: object
+            required: [key, name, items]
+            properties:
+              key: {type: string}
+              name: {type: string}
+              items: {type: array, items: {$ref: '#/components/schemas/ListItem'}}
+    Profile:
+      type: object
+      required: [dinners_per_week, servings, spice_level, one_pot, protein_mix, avoid, shop, shopping_day, baby_portions, language]
+      properties:
+        dinners_per_week: {type: integer, minimum: 1, maximum: 7}
+        servings: {type: integer, minimum: 1, maximum: 12}
+        spice_level: {type: string, enum: [none, mild, medium, hot]}
+        one_pot: {type: boolean}
+        protein_mix:
+          type: object
+          description: Dinners per week by protein
+          additionalProperties: {type: integer, minimum: 0}
+          example: {chicken: 2, fish: 1, vegetarian: 1}
+        avoid: {type: array, items: {type: string}}
+        shop: {type: string}
+        shopping_day: {$ref: '#/components/schemas/Weekday'}
+        baby_portions: {type: boolean}
+        language: {type: string, example: en}
+    Section:
+      type: object
+      required: [key, name]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9_]{0,39}$'}
+        name: {type: string}
+        sort_order: {type: integer, description: Ignored on PUT; array order wins}
+    PantryItem:
+      type: object
+      required: [name, normalized_name]
+      properties:
+        name: {type: string}
+        normalized_name: {type: string}
+    Feedback:
+      type: object
+      required: [id, meal_id, rating, note, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        meal_id: {type: string, format: uuid}
+        rating: {type: integer}
+        note: {type: string}
+        created_at: {type: string, format: date-time}
+    Household:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+    Membership:
+      type: object
+      required: [household_id, household_name, role]
+      properties:
+        household_id: {type: string, format: uuid}
+        household_name: {type: string}
+        role: {$ref: '#/components/schemas/Role'}
+    Invite:
+      type: object
+      required: [id, role, expires_at]
+      properties:
+        id: {type: string, format: uuid}
+        role: {$ref: '#/components/schemas/Role'}
+        expires_at: {type: string, format: date-time}
+        accepted_at: {type: string, format: date-time}
+        token: {type: string}
+        url: {type: string}
+    UsageRow:
+      type: object
+      required: [household_id, household, calls, input_tokens, output_tokens]
+      properties:
+        household_id: {type: string, format: uuid}
+        household: {type: string}
+        calls: {type: integer}
+        input_tokens: {type: integer}
+        output_tokens: {type: integer}

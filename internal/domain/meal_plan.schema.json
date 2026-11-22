@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MealPlan",
+  "description": "Meals returned by Claude. Claude never returns the shopping list; the server builds it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meals"],
+  "properties": {
+    "meals": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["day", "title", "protein", "minutes", "one_pot", "servings", "ingredients", "steps", "after_baby_portion"],
+        "properties": {
+          "day": {"type": "string", "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]},
+          "title": {"type": "string", "minLength": 1},
+          "protein": {"type": "string", "enum": ["chicken", "fish", "vegetarian", "other"]},
+          "minutes": {"type": "integer", "minimum": 1},
+          "one_pot": {"type": "boolean"},
+          "servings": {"type": "integer", "minimum": 1},
+          "ingredients": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "normalized_name", "qty", "unit", "section"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1, "description": "As written in the recipe, e.g. 'red onions, sliced'"},
+                "normalized_name": {"type": "string", "minLength": 1, "description": "Singular, lowercase, no preparation, e.g. 'red onion'. Used to merge the shopping list."},
+                "qty": {"type": "number", "minimum": 0},
+                "unit": {"type": "string", "description": "One of g, kg, ml, dl, l, tsp, tbsp, pcs, or a count noun such as 'clove' or 'can'"},
+                "section": {"type": "string", "description": "A shop section key from the household's list"}
+              }
+            }
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "timer_min", "baby_portion"],
+              "properties": {
+                "text": {"type": "string", "minLength": 1},
+                "timer_min": {"type": ["integer", "null"], "minimum": 1},
+                "baby_portion": {"type": "boolean", "description": "True for the step that takes out the baby's portion, before salt, stock or cheese"}
+              }
+            }
+          },
+          "after_baby_portion": {"type": "array", "items": {"type": "string"}, "description": "Ingredients added only after the baby portion is taken out"}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+/* Base styles. Package C owns this file. */
+:root {
+  --bg: #fbfaf7; --fg: #1d2420; --muted: #6b746f; --accent: #2f6f4f; --line: #e3e0d8;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151917; --fg: #e9ece9; --muted: #9aa39e; --accent: #7cc39e; --line: #2b322e; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); padding-bottom: 4rem; }
+.top { padding: 1rem 1rem 0; }
+.top h1 { margin: 0; font-size: 1.4rem; }
+main { padding: 1rem; max-width: 40rem; margin: 0 auto; }
+.muted { color: var(--muted); }
+.tabs {
+  position: fixed; inset: auto 0 0 0; display: flex; justify-content: space-around;
+  background: var(--bg); border-top: 1px solid var(--line);
+  padding: .5rem 0 calc(.5rem + env(safe-area-inset-bottom));
+}
+.tabs a { color: var(--muted); text-decoration: none; padding: .5rem .75rem; }
+.tabs a[aria-current="page"] { color: var(--accent); font-weight: 600; }

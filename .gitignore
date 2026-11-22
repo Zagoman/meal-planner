@@ -1,0 +1,9 @@
+/bin/
+.env
+.env.*
+!.env.example
+*.test
+coverage.out
+/playwright-report/
+/test-results/
+node_modules/

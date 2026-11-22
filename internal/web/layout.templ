@@ -1,0 +1,66 @@
+package web
+
+// Tab is one of the five screens in the bottom navigation.
+type Tab string
+
+const (
+	TabList      Tab = "list"
+	TabWeek      Tab = "week"
+	TabRecipe    Tab = "recipe"
+	TabProfile   Tab = "profile"
+	TabHousehold Tab = "household"
+)
+
+type navItem struct {
+	tab   Tab
+	href  string
+	label string
+}
+
+var nav = []navItem{
+	{TabList, "/", "List"},
+	{TabWeek, "/week", "Week"},
+	{TabProfile, "/profile", "Profile"},
+	{TabHousehold, "/household", "Household"},
+}
+
+// Layout is the base page: htmx + SSE extension, PWA manifest, service
+// worker, bottom navigation. Pages render their content as children.
+templ Layout(title string, active Tab) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+			<meta name="theme-color" content="#2f6f4f"/>
+			<title>{ title } · Meal Planner</title>
+			<link rel="manifest" href="/static/manifest.webmanifest"/>
+			<link rel="stylesheet" href="/static/app.css"/>
+			<script src="/static/htmx.min.js" defer></script>
+			<script src="/static/htmx-ext-sse.js" defer></script>
+			<script src="/static/app.js" defer></script>
+		</head>
+		<body hx-boost="true">
+			<header class="top">
+				<h1>{ title }</h1>
+			</header>
+			<main id="main">
+				{ children... }
+			</main>
+			<nav class="tabs" aria-label="Main">
+				for _, n := range nav {
+					<a href={ templ.SafeURL(n.href) } if n.tab == active {
+						aria-current="page"
+					}>{ n.label }</a>
+				}
+			</nav>
+		</body>
+	</html>
+}
+
+// Placeholder is shown on screens package C has not built yet.
+templ Placeholder(title string, active Tab) {
+	@Layout(title, active) {
+		<p class="muted">This screen is not built yet.</p>
+	}
+}
