@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,11 +13,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/Zagoman/meal-planner/internal/app"
+	"github.com/Zagoman/meal-planner/internal/auth"
 	"github.com/Zagoman/meal-planner/internal/claude"
 	"github.com/Zagoman/meal-planner/internal/config"
 	"github.com/Zagoman/meal-planner/internal/database"
 	"github.com/Zagoman/meal-planner/internal/events"
+	"github.com/Zagoman/meal-planner/internal/household"
 	"github.com/Zagoman/meal-planner/internal/planner"
 	"github.com/Zagoman/meal-planner/internal/server"
 	"github.com/Zagoman/meal-planner/internal/service"
@@ -51,11 +56,27 @@ func run() error {
 		return err
 	}
 
+	// `server admin password [email]` sets a new random password for the
+	// member (default ADMIN_EMAIL) and prints it to stdout, not the log.
+	if len(os.Args) > 2 && os.Args[1] == "admin" && os.Args[2] == "password" {
+		return adminPassword(ctx, pool, cfg)
+	}
+	if _, err := household.Bootstrap(ctx, pool, cfg.AdminEmail); err != nil {
+		return err
+	}
+
 	hub := events.NewHub()
 	services := service.NewUnimplemented()
 
-	// Package B: plans and shopping lists. The real Claude client exists only
-	// when a key is configured; without it, plan generation returns 502.
+	authSvc := auth.New(pool, cfg.AdminEmail)
+	householdSvc := household.New(pool, cfg.BaseURL, cfg.AdminEmail)
+	services.Auth = authSvc
+	services.Households = householdSvc
+	services.Profiles = householdSvc
+	services.Feedback = householdSvc
+
+	// The real Claude client exists only when a key is configured; without
+	// it, plan generation returns 502.
 	var claudeClient claude.Client
 	if cfg.AnthropicAPIKey != "" {
 		claudeClient = claude.NewAnthropic(cfg.AnthropicAPIKey, cfg.ClaudeModel)
@@ -66,9 +87,8 @@ func run() error {
 	services.Plans = planner.New(pool, claudeClient, hub, planner.Options{Timeout: cfg.GenerateTimeout})
 
 	deps := app.Deps{
-		Config: cfg,
-		Pool:   pool,
-		// Package A replaces the remaining unimplemented services.
+		Config:   cfg,
+		Pool:     pool,
 		Services: services,
 		Events:   hub,
 	}
@@ -95,4 +115,24 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// adminPassword is package A's `server admin password [email]` command.
+func adminPassword(ctx context.Context, pool *pgxpool.Pool, cfg config.Config) error {
+	if _, err := household.Bootstrap(ctx, pool, cfg.AdminEmail); err != nil {
+		return err
+	}
+	email := cfg.AdminEmail
+	if len(os.Args) > 3 {
+		email = os.Args[3]
+	}
+	if email == "" {
+		return errors.New("usage: server admin password <email> (or set ADMIN_EMAIL)")
+	}
+	pw, err := auth.New(pool, cfg.AdminEmail).ResetPassword(ctx, email)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(os.Stdout, "New password for %s: %s\n", auth.NormalizeEmail(email), pw)
+	return err
 }
