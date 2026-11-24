@@ -220,7 +220,14 @@ a draft holding that meal.
   copy, web routes for all of it, and Playwright (rate the week, add the
   not-cooked meal back, search, tweak, add to this week).
 
-**Known issues**
+**Deployed** 2026-11-24 as `4eaf1f68511b`. Dump first:
+`mealplanner-20261124-213336.dump`. Migration 4 applied: the one old rating
+became one outcome, `feedback` is gone, all 24 meals are in the library (24
+recipes) and linked. Plans unchanged (1 draft, 1 active, 4 archived). The
+live draft was made before this deploy, so it was made without the
+rated-1/not-cooked rules (see G-2 in GAPS.md).
+
+**Known issues** (tracked in GAPS.md)
 
 - A draft made before the rating step (the 18:00 weekly draft) can already
   contain a meal that is then marked not cooked; only later swaps, Ask
