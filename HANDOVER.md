@@ -49,6 +49,15 @@ the end of every window.
 - Tests: `make test`, `make lint` and `make e2e` pass locally. The e2e flow
   now also answers Buy / Have it on one phone and checks the other phone.
 
+**Deployed** 2026-11-24 as `6747c74ab3c1` (`make deploy`, healthy in the
+container and through Caddy). A dump was taken first:
+`mealplanner-20261124-184308.dump`. Migration 2 applied on start; the profile
+kept its 4 dinners (`meal_targets.dinner`), people 2, shopping day Sunday.
+The avoid list and pantry were empty, so no avoid or Check at home items
+yet. 1 active and 3 archived plans and 104 list items are unchanged. The
+signed-in pages have not been tried on a phone yet: that needs the account's
+own sign-in.
+
 **Not done in this window**
 
 - The handoff's "attach the two existing accounts to one household as
