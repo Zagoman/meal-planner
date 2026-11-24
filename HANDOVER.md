@@ -142,6 +142,23 @@ swapped at auto-confirm; the weekly draft is made at 18:00 (not a setting).
   isolation, and Playwright: two phones review together (votes and swaps
   on the other phone within 2 s, both confirm, confirmed once).
 
+**Deployed** 2026-11-24, now `d72783b10daa`. Dump first:
+`mealplanner-20261124-193441.dump`. Migration 3 applied; existing plans got
+`confirmed_at`, the profile got time zone Europe/Copenhagen (shopping day
+Sunday, auto-confirm 08:00). The first weekly draft is due Saturday 28 Nov
+18:00 for Sunday 29 Nov.
+
+Two fixes found on the live server, deployed the same evening:
+
+- `9b81fe9`: plans made before the review flow start on the Monday after
+  they were made (the live plan: 30 Nov), which looked like they covered
+  the Sunday shopping week and would have skipped the weekly draft. Only a
+  plan starting on the shopping weekday covers a week now.
+- `d72783b`: a job cut off by a deploy failed with "context canceled"; it
+  is now requeued, and the server waits for the worker on shutdown. One
+  draft job (19:37, for 6 Dec) failed this way before the fix; the Week card
+  shows "Try again".
+
 **Known issues**
 
 - Until window 3, the card's "Start review" opens the review directly (no
