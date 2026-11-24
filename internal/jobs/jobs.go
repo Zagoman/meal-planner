@@ -226,6 +226,15 @@ func (w *Worker) RunOne(ctx context.Context) (bool, error) {
 	}
 	// The outcome is stored even if ctx was cancelled meanwhile.
 	done := context.WithoutCancel(ctx)
+	if err != nil && ctx.Err() != nil && job.Attempts < 3 {
+		// Stopped by a shutdown (a deploy), not by the job: run it again
+		// after the restart instead of failing it.
+		log.Info("job interrupted by shutdown, requeued")
+		if rerr := q.RequeueJob(done, job.ID); rerr != nil {
+			return true, fmt.Errorf("requeue job: %w", rerr)
+		}
+		return true, nil
+	}
 	if err != nil {
 		log.Warn("job failed", "attempt", job.Attempts, "err", err)
 		if ferr := q.FailJob(done, db.FailJobParams{ID: job.ID, Error: truncate(err.Error(), 1000)}); ferr != nil {

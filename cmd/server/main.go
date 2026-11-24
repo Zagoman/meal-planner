@@ -94,7 +94,11 @@ func run() error {
 
 	// Background jobs (every Claude call of the review flow) and the weekly
 	// schedules run inside this process.
-	go worker.Run(ctx)
+	workerDone := make(chan struct{})
+	go func() {
+		worker.Run(ctx)
+		close(workerDone)
+	}()
 	go plans.RunSchedules(ctx)
 
 	deps := app.Deps{
@@ -125,7 +129,13 @@ func run() error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	shutdownErr := srv.Shutdown(shutdownCtx)
+	// Let a job cut off by the shutdown go back in the queue.
+	select {
+	case <-workerDone:
+	case <-shutdownCtx.Done():
+	}
+	return shutdownErr
 }
 
 // adminPassword is package A's `server admin password [email]` command.

@@ -109,3 +109,29 @@ func TestStaleJobsAreRetried(t *testing.T) {
 		t.Errorf("recovered job: %+v", j)
 	}
 }
+
+// A job cut off by a shutdown goes back in the queue instead of failing.
+func TestShutdownRequeues(t *testing.T) {
+	t.Parallel()
+	pool := testutil.NewDB(t)
+	sc := testutil.NewHousehold(t, pool, "A")
+	q := db.New(pool)
+	job, err := jobs.Enqueue(context.Background(), q, jobs.New{HouseholdID: sc.HouseholdID, Kind: domain.JobDraft})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	w := jobs.NewWorker(pool, jobs.Options{})
+	w.Handle(domain.JobDraft, func(jctx context.Context, _ db.Job) (any, error) {
+		cancel() // the server shuts down while Claude works
+		<-jctx.Done()
+		return nil, jctx.Err()
+	})
+	if _, err := w.RunOne(ctx); err != nil {
+		t.Fatal(err)
+	}
+	j, _ := q.GetJob(context.Background(), db.GetJobParams{ID: job.ID, HouseholdID: sc.HouseholdID})
+	if j.Status != "queued" || j.Error != "" {
+		t.Errorf("after shutdown: %s %q", j.Status, j.Error)
+	}
+}

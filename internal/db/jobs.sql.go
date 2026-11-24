@@ -288,3 +288,13 @@ func (q *Queries) RecoverStaleJobs(ctx context.Context, before time.Time) (int64
 	}
 	return result.RowsAffected(), nil
 }
+
+const requeueJob = `-- name: RequeueJob :exec
+UPDATE jobs SET status = 'queued', started_at = NULL WHERE id = $1 AND status = 'running'
+`
+
+// A job stopped by a shutdown goes back in the queue.
+func (q *Queries) RequeueJob(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, requeueJob, id)
+	return err
+}

@@ -117,6 +117,8 @@ type Querier interface {
 	// A swap keeps the meal's id, type and position; ingredients, steps and
 	// votes are deleted and inserted again by the caller.
 	ReplaceMealContent(ctx context.Context, arg ReplaceMealContentParams) (int64, error)
+	// A job stopped by a shutdown goes back in the queue.
+	RequeueJob(ctx context.Context, id uuid.UUID) error
 	RevokeAPIToken(ctx context.Context, arg RevokeAPITokenParams) error
 	SetListItemChecked(ctx context.Context, arg SetListItemCheckedParams) (ListItem, error)
 	// Only Check at home items can be answered; NULL clears the answer.

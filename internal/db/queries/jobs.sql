@@ -44,3 +44,7 @@ ORDER BY created_at DESC LIMIT 1;
 -- name: ListPendingJobs :many
 SELECT * FROM jobs WHERE household_id = $1 AND status IN ('queued', 'running')
 ORDER BY created_at;
+
+-- name: RequeueJob :exec
+-- A job stopped by a shutdown goes back in the queue.
+UPDATE jobs SET status = 'queued', started_at = NULL WHERE id = $1 AND status = 'running';
