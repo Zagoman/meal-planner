@@ -24,28 +24,82 @@ templ ListPage(l domain.List, hasPlan bool, sections []domain.Section) {
 	}
 }
 
-// ListBody is every section; it is what the SSE stream sends on each change.
+// ListBody is the whole list; it is what the SSE stream sends on each
+// change. Each part has a stable id (#progress, #check-home,
+// #section-{key}, #item-{id}) so it can be swapped on its own.
 templ ListBody(l domain.List) {
-	{{ done, total := countChecked(l) }}
-	<p class="progress muted" data-done={ itoa(done) } data-total={ itoa(total) }>
-		{ itoa(done) } of { itoa(total) } in the basket
-	</p>
+	@Progress(l)
+	if len(l.CheckHome) > 0 {
+		@CheckHome(l)
+	}
 	for _, sec := range l.Sections {
-		<section
-			class={ "sec", templ.KV("pantry", sec.Key == domain.PantryCheckSection) }
-			id={ "sec-" + sec.Key }
-		>
-			<h2>{ sec.Name }</h2>
-			if sec.Key == domain.PantryCheckSection {
-				<p class="muted small">You usually have these. Check before buying.</p>
-			}
+		@ListSection(sec)
+	}
+}
+
+// Progress counts only the items to buy, not Check at home items.
+templ Progress(l domain.List) {
+	{{ done, total := l.Progress() }}
+	<div id="progress" class="progress" data-done={ itoa(done) } data-total={ itoa(total) }>
+		<p class="progress-text">{ itoa(done) } of { itoa(total) } in the basket</p>
+		<div class="bar" role="progressbar" aria-label="Shopping progress" aria-valuemin="0" aria-valuemax={ itoa(total) } aria-valuenow={ itoa(done) }>
+			<div class="bar-fill" style={ barStyle(done, total) }></div>
+		</div>
+	</div>
+}
+
+// CheckHome is the card of pantry items at the top: "Have it" hides an item
+// from the shopping, "Buy" adds it to its section below.
+templ CheckHome(l domain.List) {
+	<section id="check-home" class="check-home">
+		<h2 class="sec-label">Check at home · { itoa(l.CheckHomeAnswered()) } of { itoa(len(l.CheckHome)) } checked</h2>
+		<div class="card home-card">
+			<p class="small">Before you leave, mark what's already in the house. Anything marked Buy joins the list below.</p>
 			<ul class="items">
-				for _, it := range sec.Items {
-					@Item(it)
+				for _, it := range l.CheckHome {
+					@HomeItem(it)
 				}
 			</ul>
-		</section>
-	}
+		</div>
+	</section>
+}
+
+templ HomeItem(it domain.ListItem) {
+	<li id={ "home-" + it.ID.String() } class="home-row">
+		<span class="name">{ it.Name }</span>
+		<div class="seg" role="group" aria-label={ it.Name }>
+			@haveItButton(it, true, "Have it")
+			@haveItButton(it, false, "Buy")
+		</div>
+	</li>
+}
+
+// haveItButton posts the answer; tapping the selected answer again clears it.
+templ haveItButton(it domain.ListItem, value bool, label string) {
+	{{ on := it.HaveIt != nil && *it.HaveIt == value }}
+	<form class="seg-form" method="post" action={ templ.SafeURL("/list/items/" + it.ID.String() + "/home") }
+		hx-post={ "/list/items/" + it.ID.String() + "/home" }
+		hx-target="#list"
+		hx-swap="innerHTML"
+	>
+		if on {
+			<input type="hidden" name="have_it" value=""/>
+		} else {
+			<input type="hidden" name="have_it" value={ strconv.FormatBool(value) }/>
+		}
+		<button type="submit" class={ "sb", templ.KV("sb-on", on) } aria-pressed={ strconv.FormatBool(on) }>{ label }</button>
+	</form>
+}
+
+templ ListSection(sec domain.ListSection) {
+	<section class="sec" id={ "section-" + sec.Key }>
+		<h2 class="sec-label">{ sec.Name }</h2>
+		<ul class="items card">
+			for _, it := range sec.Items {
+				@Item(it)
+			}
+		</ul>
+	</section>
 }
 
 // Item is one row; ticking swaps just this element.
@@ -54,7 +108,7 @@ templ Item(it domain.ListItem) {
 		<button
 			type="button"
 			class="tick"
-			hx-post={ "/list/items/" + it.ID.String() + "/check" }
+			hx-post={ "/list/items/" + it.ID.String() + "/toggle" }
 			hx-vals={ checkVals(it) }
 			hx-target="closest li"
 			hx-swap="outerHTML"
@@ -64,13 +118,8 @@ templ Item(it domain.ListItem) {
 		>
 			<span class="box" aria-hidden="true"></span>
 			<span class="name">{ it.Name }</span>
-			if it.QtyText != "" || it.NeedText != "" {
-				<span class="need">
-					if it.QtyText != "" {
-						<strong>{ it.QtyText }</strong>
-					}
-					{ it.NeedText }
-				</span>
+			if qty := qtyLine(it); qty != "" {
+				<span class="need">{ qty }</span>
 			}
 		</button>
 		if it.IsManual {
@@ -88,7 +137,7 @@ templ Item(it domain.ListItem) {
 
 templ AddItemForm(sections []domain.Section) {
 	<form
-		class="add card"
+		class="add add-item"
 		action="/list/items"
 		method="post"
 		hx-post="/list/items"
@@ -104,6 +153,6 @@ templ AddItemForm(sections []domain.Section) {
 				<option value={ s.Key } selected?={ s.Key == "other" }>{ s.Name }</option>
 			}
 		</select>
-		<button type="submit">Add</button>
+		<button type="submit" class="primary">Add</button>
 	</form>
 }

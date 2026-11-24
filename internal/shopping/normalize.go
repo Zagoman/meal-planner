@@ -76,3 +76,25 @@ func ContainsTerm(name, term string) bool {
 	}
 	return n == t || strings.HasPrefix(n, t+" ") || strings.HasSuffix(n, " "+t) || strings.Contains(n, " "+t+" ")
 }
+
+// waterWords may come before "water" in plain water ("cold water").
+var waterWords = map[string]bool{
+	"cold": true, "hot": true, "warm": true, "lukewarm": true, "boiling": true,
+	"tap": true, "ice": true, "iced": true, "fresh": true,
+}
+
+// IsWater reports whether an ingredient is plain water, which is never put
+// on the shopping list. "Coconut water" and "sparkling water" are bought, so
+// they are not water here.
+func IsWater(name string) bool {
+	words := strings.Fields(Normalize(name))
+	if len(words) == 0 || words[len(words)-1] != "water" {
+		return false
+	}
+	for _, w := range words[:len(words)-1] {
+		if !waterWords[w] {
+			return false
+		}
+	}
+	return true
+}

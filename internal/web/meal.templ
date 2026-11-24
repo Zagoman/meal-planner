@@ -5,10 +5,7 @@ import "github.com/Zagoman/meal-planner/internal/domain"
 templ MealPage(m domain.Meal) {
 	@Layout(m.Title, TabRecipe) {
 		<p class="meta">
-			if m.Day != "" {
-				{ dayName(m.Day) } ·
-			}
-			{ itoa(m.Minutes) } min · { itoa(m.Servings) } servings
+			{ mealMeta(m) } · { itoa(m.Servings) } servings
 			if m.OnePot {
 				· one pot
 			}

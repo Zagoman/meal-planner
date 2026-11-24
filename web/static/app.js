@@ -52,12 +52,16 @@
     updateProgress();
   }
 
+  // Progress counts only items in the sections (not Check at home).
   function updateProgress() {
-    const p = $(".progress[data-total]");
+    const p = $("#progress");
     if (!p) return;
-    const done = $$("#list .item.checked").length;
-    const total = $$("#list .item").length;
-    p.textContent = `${done} of ${total} in the basket`;
+    const done = $$("#list .sec .item.checked").length;
+    const total = $$("#list .sec .item").length;
+    const text = $(".progress-text", p);
+    if (text) text.textContent = `${done} of ${total} in the basket`;
+    const fill = $(".bar-fill", p);
+    if (fill) fill.style.width = total ? `${Math.floor((done * 100) / total)}%` : "0%";
   }
 
   function queueTick(itemId, checked) {
@@ -84,7 +88,7 @@
       for (const id of ids) {
         let res;
         try {
-          res = await fetch(`/list/items/${encodeURIComponent(id)}/check`, {
+          res = await fetch(`/list/items/${encodeURIComponent(id)}/toggle`, {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/x-www-form-urlencoded", "HX-Request": "true" },

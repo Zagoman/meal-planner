@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Zagoman/meal-planner/internal/api"
@@ -112,7 +113,8 @@ func (e *env) seedA() {
 		t.Fatal(err)
 	}
 	meal, err := e.q.CreateMeal(ctx, db.CreateMealParams{
-		HouseholdID: sc.HouseholdID, PlanID: plan.ID, Day: "monday", Title: "Marker stew",
+		HouseholdID: sc.HouseholdID, PlanID: plan.ID, Day: pgtype.Text{String: "monday", Valid: true},
+		MealType: "dinner", AddedFrom: "claude", Title: "Marker stew",
 		Protein: "fish", Minutes: 30, OnePot: true, Servings: 2, AfterBabyPortion: []string{},
 	})
 	if err != nil {

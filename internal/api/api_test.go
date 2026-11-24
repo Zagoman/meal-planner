@@ -230,7 +230,8 @@ func TestValidation(t *testing.T) {
 		{"POST", "/api/meals/" + e.aMealID.String() + "/substitute", `{"from":"","to":"x"}`},
 		{"POST", "/api/list/items", `{"name":"  "}`},
 		{"PATCH", "/api/list/items/" + e.aItem.String(), `{}`},
-		{"PUT", "/api/profile", `{"dinners_per_week":9}`},
+		{"PUT", "/api/profile", `{"meal_targets":{"dinner":15}}`},
+		{"PUT", "/api/profile", `{"dinners_per_week":4}`},
 		{"PUT", "/api/sections", `[{"key":"Bad Key","name":"x"}]`},
 		{"PUT", "/api/sections", `[{"key":"pantry_check","name":"x"}]`},
 		{"PUT", "/api/sections", `[{"key":"a","name":"x"},{"key":"a","name":"y"}]`},
@@ -260,8 +261,9 @@ func TestProfileRoundTrip(t *testing.T) {
 		t.Errorf("pantry: %d %s", code, body)
 	}
 	code, body = e.do(e.a.token, "PUT", "/api/profile",
-		`{"dinners_per_week":5,"servings":4,"spice_level":"mild","one_pot":false,"protein_mix":{"chicken":2},"avoid":[" peanuts ","Peanuts"],"shop":"Netto","shopping_day":"friday","baby_portions":true,"language":""}`)
-	if code != 200 || !strings.Contains(body, `"avoid":["peanuts"]`) || !strings.Contains(body, `"language":"en"`) {
+		`{"meal_targets":{"breakfast":7,"dinner":5},"people":4,"spice_level":"mild","one_pot":false,"protein_mix":{"chicken":2},"avoid":[" peanuts ","Peanuts"],"shop":"Netto","shopping_day":"friday","baby_portions":true,"language":""}`)
+	if code != 200 || !strings.Contains(body, `"avoid":["peanuts"]`) || !strings.Contains(body, `"language":"en"`) ||
+		!strings.Contains(body, `"meal_targets":{"baking":0,"breakfast":7,"dinner":5,"lunch":0}`) || !strings.Contains(body, `"auto_confirm_time":"08:00"`) {
 		t.Errorf("profile: %d %s", code, body)
 	}
 	if _, body := e.do(e.a.token, "GET", "/api/profile", ""); !strings.Contains(body, `"shop":"Netto"`) {

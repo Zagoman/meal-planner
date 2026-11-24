@@ -64,10 +64,39 @@ func (h *handlers) checkItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isHX(r) {
-		redirect(w, r, "/")
+		redirect(w, r, "/list")
 		return
 	}
 	h.render(w, r, http.StatusOK, Item(it))
+}
+
+// haveItem answers a Check at home item: have_it=true (Have it), false
+// (Buy) or empty (clear). It answers with the whole list, since a Buy item
+// also moves into its section.
+func (h *handlers) haveItem(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	var haveIt *bool
+	if v := r.PostFormValue("have_it"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			h.fail(w, r, &domain.ValidationError{Problems: []string{"have_it: must be true, false or empty"}})
+			return
+		}
+		haveIt = &b
+	}
+	if _, err := h.svc.Lists.SetHaveIt(r.Context(), scope(r), id, haveIt); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if !isHX(r) {
+		redirect(w, r, "/list")
+		return
+	}
+	h.renderListBody(w, r)
 }
 
 func (h *handlers) addItem(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +106,7 @@ func (h *handlers) addItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isHX(r) {
-		redirect(w, r, "/")
+		redirect(w, r, "/list")
 		return
 	}
 	h.renderListBody(w, r)
@@ -94,7 +123,7 @@ func (h *handlers) deleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isHX(r) {
-		redirect(w, r, "/")
+		redirect(w, r, "/list")
 		return
 	}
 	w.WriteHeader(http.StatusOK) // empty body: the row is swapped away
@@ -130,7 +159,7 @@ func (h *handlers) listStream(w http.ResponseWriter, r *http.Request) {
 		var buf bytes.Buffer
 		switch {
 		case errors.Is(err, domain.ErrNotFound):
-			buf.WriteString(`<p class="muted">The plan changed. <a href="/">Reload</a></p>`)
+			buf.WriteString(`<p class="muted">The plan changed. <a href="/list">Reload</a></p>`)
 		case err != nil:
 			return err
 		default:

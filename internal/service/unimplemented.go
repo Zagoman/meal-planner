@@ -58,6 +58,9 @@ func (Unimplemented) AddItem(context.Context, domain.Scope, string, string) (dom
 func (Unimplemented) SetChecked(context.Context, domain.Scope, uuid.UUID, bool) (domain.ListItem, error) {
 	return domain.ListItem{}, errNI
 }
+func (Unimplemented) SetHaveIt(context.Context, domain.Scope, uuid.UUID, *bool) (domain.ListItem, error) {
+	return domain.ListItem{}, errNI
+}
 func (Unimplemented) DeleteItem(context.Context, domain.Scope, uuid.UUID) error { return errNI }
 func (Unimplemented) Get(context.Context, domain.Scope) (domain.Profile, error) {
 	return domain.Profile{}, errNI
@@ -77,6 +80,13 @@ func (Unimplemented) Pantry(context.Context, domain.Scope) ([]domain.PantryItem,
 func (Unimplemented) PutPantry(context.Context, domain.Scope, []string) ([]domain.PantryItem, error) {
 	return nil, errNI
 }
+func (Unimplemented) AvoidItems(context.Context, domain.Scope) ([]domain.AvoidItem, error) {
+	return nil, errNI
+}
+func (Unimplemented) AddAvoid(context.Context, domain.Scope, string, domain.AvoidSource) (domain.AvoidItem, error) {
+	return domain.AvoidItem{}, errNI
+}
+func (Unimplemented) DeleteAvoid(context.Context, domain.Scope, uuid.UUID) error { return errNI }
 func (Unimplemented) Rate(context.Context, domain.Scope, uuid.UUID, int, string) (domain.Feedback, error) {
 	return domain.Feedback{}, errNI
 }

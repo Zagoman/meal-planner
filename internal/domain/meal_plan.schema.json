@@ -9,18 +9,25 @@
     "meals": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 7,
+      "maxItems": 56,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["day", "title", "protein", "minutes", "one_pot", "servings", "ingredients", "steps", "after_baby_portion"],
+        "required": ["meal_type", "day", "title", "protein", "minutes", "one_pot", "servings", "ingredients", "steps", "after_baby_portion"],
         "properties": {
-          "day": {"type": "string", "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]},
+          "meal_type": {"type": "string", "enum": ["breakfast", "lunch", "dinner", "baking"]},
+          "day": {
+            "description": "Suggested day, or null; the household cooks meals in any order",
+            "anyOf": [
+              {"type": "string", "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]},
+              {"type": "null"}
+            ]
+          },
           "title": {"type": "string", "minLength": 1},
           "protein": {"type": "string", "enum": ["chicken", "fish", "vegetarian", "other"]},
           "minutes": {"type": "integer", "minimum": 1},
           "one_pot": {"type": "boolean"},
-          "servings": {"type": "integer", "minimum": 1},
+          "servings": {"type": "integer", "minimum": 1, "description": "Portions this meal makes, normally the household's number of people"},
           "ingredients": {
             "type": "array",
             "minItems": 1,

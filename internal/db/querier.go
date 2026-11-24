@@ -31,6 +31,8 @@ type Querier interface {
 	CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Recipe, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateStep(ctx context.Context, arg CreateStepParams) error
+	DeleteAvoidItem(ctx context.Context, arg DeleteAvoidItemParams) (int64, error)
+	DeleteAvoidItemsNotIn(ctx context.Context, arg DeleteAvoidItemsNotInParams) error
 	DeleteDraftPlan(ctx context.Context, arg DeleteDraftPlanParams) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteInvite(ctx context.Context, arg DeleteInviteParams) error
@@ -50,7 +52,6 @@ type Querier interface {
 	GetInviteByTokenHash(ctx context.Context, tokenHash []byte) (Invite, error)
 	GetListItem(ctx context.Context, arg GetListItemParams) (ListItem, error)
 	GetMeal(ctx context.Context, arg GetMealParams) (Meal, error)
-	GetMealByDay(ctx context.Context, arg GetMealByDayParams) (Meal, error)
 	GetMember(ctx context.Context, id uuid.UUID) (Member, error)
 	GetMemberByEmail(ctx context.Context, email string) (Member, error)
 	GetMembership(ctx context.Context, arg GetMembershipParams) (HouseholdMember, error)
@@ -58,16 +59,20 @@ type Querier interface {
 	GetProfile(ctx context.Context, householdID uuid.UUID) (Profile, error)
 	GetRecipe(ctx context.Context, arg GetRecipeParams) (Recipe, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (Session, error)
+	// Adding a name that is already on the list returns nothing (pgx.ErrNoRows).
+	InsertAvoidItem(ctx context.Context, arg InsertAvoidItemParams) (AvoidItem, error)
 	InsertPantryItem(ctx context.Context, arg InsertPantryItemParams) error
 	InsertSection(ctx context.Context, arg InsertSectionParams) error
 	InsertUsage(ctx context.Context, arg InsertUsageParams) error
 	ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([]ApiToken, error)
+	ListAvoidItems(ctx context.Context, householdID uuid.UUID) ([]AvoidItem, error)
 	ListHouseholdMembers(ctx context.Context, householdID uuid.UUID) ([]ListHouseholdMembersRow, error)
 	ListHouseholds(ctx context.Context) ([]Household, error)
 	ListIngredientsForMeal(ctx context.Context, arg ListIngredientsForMealParams) ([]Ingredient, error)
 	ListIngredientsForPlan(ctx context.Context, arg ListIngredientsForPlanParams) ([]Ingredient, error)
 	ListInvites(ctx context.Context, householdID uuid.UUID) ([]Invite, error)
 	ListItemsForPlan(ctx context.Context, arg ListItemsForPlanParams) ([]ListItem, error)
+	// Suggested day (meals without one last), then meal type, then position.
 	ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error)
 	ListMemberHouseholds(ctx context.Context, memberID uuid.UUID) ([]ListMemberHouseholdsRow, error)
 	ListPantryItems(ctx context.Context, householdID uuid.UUID) ([]PantryItem, error)
@@ -79,6 +84,8 @@ type Querier interface {
 	RemoveHouseholdMember(ctx context.Context, arg RemoveHouseholdMemberParams) error
 	RevokeAPIToken(ctx context.Context, arg RevokeAPITokenParams) error
 	SetListItemChecked(ctx context.Context, arg SetListItemCheckedParams) (ListItem, error)
+	// Only Check at home items can be answered; NULL clears the answer.
+	SetListItemHaveIt(ctx context.Context, arg SetListItemHaveItParams) (ListItem, error)
 	SetServerAdmin(ctx context.Context, arg SetServerAdminParams) error
 	SwitchSessionHousehold(ctx context.Context, arg SwitchSessionHouseholdParams) error
 	TouchAPIToken(ctx context.Context, id uuid.UUID) error
@@ -87,6 +94,7 @@ type Querier interface {
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
 	UpsertFeedback(ctx context.Context, arg UpsertFeedbackParams) (Feedback, error)
 	// Rebuilds keep ticks: on conflict only the text/section change, never checked.
+	// An item that leaves the pantry forgets its Have it / Buy answer.
 	UpsertGeneratedListItem(ctx context.Context, arg UpsertGeneratedListItemParams) (ListItem, error)
 	UsageByHousehold(ctx context.Context, since time.Time) ([]UsageByHouseholdRow, error)
 }

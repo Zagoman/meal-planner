@@ -41,7 +41,7 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
   /plans/{plan_id}/meals/{day}/swap:
     post:
-      summary: Replace one day's meal
+      summary: Replace the dinner suggested for one day
       operationId: swapMeal
       parameters:
         - {$ref: '#/components/parameters/PlanID'}
@@ -300,6 +300,9 @@ components:
     Protein:
       type: string
       enum: [chicken, fish, vegetarian, other]
+    MealType:
+      type: string
+      enum: [breakfast, lunch, dinner, baking, other]
     Role:
       type: string
       enum: [admin, member]
@@ -315,10 +318,14 @@ components:
         meals: {type: array, items: {$ref: '#/components/schemas/Meal'}}
     Meal:
       type: object
-      required: [id, day, title, protein, minutes, one_pot, servings, ingredients, steps, after_baby_portion]
+      required: [id, meal_type, added_from, title, protein, minutes, one_pot, servings, ingredients, steps, after_baby_portion]
       properties:
         id: {type: string, format: uuid}
-        day: {$ref: '#/components/schemas/Weekday'}
+        meal_type: {$ref: '#/components/schemas/MealType'}
+        day:
+          description: Suggested day; left out when the meal has none. Meals are cooked in any order.
+          allOf: [{$ref: '#/components/schemas/Weekday'}]
+        added_from: {type: string, enum: [claude, library, not_cooked]}
         title: {type: string}
         protein: {$ref: '#/components/schemas/Protein'}
         minutes: {type: integer}
@@ -357,14 +364,24 @@ components:
         checked: {type: boolean}
         checked_by: {type: string, format: uuid}
         is_manual: {type: boolean}
+        check_home:
+          type: boolean
+          description: On the household's pantry, so shown under Check at home. Such an item is to buy only once have_it is false.
+        have_it:
+          type: boolean
+          description: Check at home answer; true is "Have it", false is "Buy". Left out while unanswered.
     List:
       type: object
-      required: [plan_id, sections]
+      required: [plan_id, check_home, sections]
       properties:
         plan_id: {type: string, format: uuid}
+        check_home:
+          type: array
+          description: Every pantry item of the list, answered or not, by name
+          items: {$ref: '#/components/schemas/ListItem'}
         sections:
           type: array
-          description: In the household's shop order; "pantry_check" is always last
+          description: Everything to buy, in the household's shop order (pantry items only once answered Buy)
           items:
             type: object
             required: [key, name, items]
@@ -374,10 +391,20 @@ components:
               items: {type: array, items: {$ref: '#/components/schemas/ListItem'}}
     Profile:
       type: object
-      required: [dinners_per_week, servings, spice_level, one_pot, protein_mix, avoid, shop, shopping_day, baby_portions, language]
+      required: [meal_targets, people, spice_level, one_pot, protein_mix, avoid, shop, shopping_day, baby_portions, language]
       properties:
-        dinners_per_week: {type: integer, minimum: 1, maximum: 7}
-        servings: {type: integer, minimum: 1, maximum: 12}
+        meal_targets:
+          type: object
+          description: Meals per week by type, 0 to 14 each, at least one in total
+          properties:
+            breakfast: {type: integer, minimum: 0, maximum: 14}
+            lunch: {type: integer, minimum: 0, maximum: 14}
+            dinner: {type: integer, minimum: 0, maximum: 14}
+            baking: {type: integer, minimum: 0, maximum: 14}
+          additionalProperties: false
+          example: {breakfast: 0, lunch: 2, dinner: 4, baking: 1}
+        people: {type: integer, minimum: 1, maximum: 12}
+        auto_confirm_time: {type: string, pattern: '^([01]?[0-9]|2[0-3]):[0-5][0-9]$', example: '08:00', description: 'Household time zone; defaults to 08:00'}
         spice_level: {type: string, enum: [none, mild, medium, hot]}
         one_pot: {type: boolean}
         protein_mix:
@@ -385,7 +412,7 @@ components:
           description: Dinners per week by protein
           additionalProperties: {type: integer, minimum: 0}
           example: {chicken: 2, fish: 1, vegetarian: 1}
-        avoid: {type: array, items: {type: string}}
+        avoid: {type: array, items: {type: string}, description: The avoid list; a PUT replaces it}
         shop: {type: string}
         shopping_day: {$ref: '#/components/schemas/Weekday'}
         baby_portions: {type: boolean}

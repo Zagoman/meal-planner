@@ -25,7 +25,8 @@ type MealPlanJSON struct {
 }
 
 type MealJSON struct {
-	Day              Weekday          `json:"day"`
+	MealType         MealType         `json:"meal_type"`
+	Day              *Weekday         `json:"day"` // suggested day, null for none
 	Title            string           `json:"title"`
 	Protein          Protein          `json:"protein"`
 	Minutes          int              `json:"minutes"`

@@ -49,6 +49,10 @@ type Lists interface {
 	Rebuild(ctx context.Context, s domain.Scope, planID uuid.UUID) (domain.List, error)
 	AddItem(ctx context.Context, s domain.Scope, name, section string) (domain.ListItem, error)
 	SetChecked(ctx context.Context, s domain.Scope, itemID uuid.UUID, checked bool) (domain.ListItem, error)
+	// SetHaveIt answers a Check at home item: true is "Have it" (hidden
+	// from shopping), false is "Buy" (shown in its section), nil clears the
+	// answer. Items not under Check at home are domain.ErrNotFound.
+	SetHaveIt(ctx context.Context, s domain.Scope, itemID uuid.UUID, haveIt *bool) (domain.ListItem, error)
 	DeleteItem(ctx context.Context, s domain.Scope, itemID uuid.UUID) error
 }
 
@@ -60,6 +64,12 @@ type Profiles interface {
 	PutSections(ctx context.Context, s domain.Scope, sections []domain.Section) ([]domain.Section, error)
 	Pantry(ctx context.Context, s domain.Scope) ([]domain.PantryItem, error)
 	PutPantry(ctx context.Context, s domain.Scope, names []string) ([]domain.PantryItem, error)
+	// AvoidItems is the avoid list, by name.
+	AvoidItems(ctx context.Context, s domain.Scope) ([]domain.AvoidItem, error)
+	// AddAvoid adds one name. A name already on the list (by normalized
+	// name) returns the existing entry.
+	AddAvoid(ctx context.Context, s domain.Scope, name string, source domain.AvoidSource) (domain.AvoidItem, error)
+	DeleteAvoid(ctx context.Context, s domain.Scope, id uuid.UUID) error
 }
 
 // Feedback is ratings and the saved-recipe library.

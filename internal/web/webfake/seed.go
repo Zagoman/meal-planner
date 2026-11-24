@@ -149,7 +149,8 @@ var recipes = []recipe{
 
 func (r recipe) instantiate(day domain.Weekday, servings int) domain.Meal {
 	m := domain.Meal{
-		ID: uuid.New(), Day: day, Title: r.Title, Protein: r.Protein, Minutes: r.Minutes,
+		ID: uuid.New(), MealType: domain.MealDinner, Day: day, AddedFrom: domain.FromClaude,
+		Title: r.Title, Protein: r.Protein, Minutes: r.Minutes,
 		OnePot: r.OnePot, Servings: servings, AfterBabyPortion: r.AfterBay,
 	}
 	for i, in := range r.Ings {

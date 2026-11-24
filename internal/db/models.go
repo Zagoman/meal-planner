@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type ApiToken struct {
@@ -19,6 +20,16 @@ type ApiToken struct {
 	CreatedAt   time.Time
 	LastUsedAt  *time.Time
 	RevokedAt   *time.Time
+}
+
+type AvoidItem struct {
+	ID             uuid.UUID
+	HouseholdID    uuid.UUID
+	Name           string
+	NormalizedName string
+	AddedBy        uuid.NullUUID
+	AddedAt        time.Time
+	Source         string
 }
 
 type Feedback struct {
@@ -83,13 +94,16 @@ type ListItem struct {
 	IsManual       bool
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	CheckHome      bool
+	HaveIt         pgtype.Bool
+	AddedBy        uuid.NullUUID
 }
 
 type Meal struct {
 	ID               uuid.UUID
 	HouseholdID      uuid.UUID
 	PlanID           uuid.UUID
-	Day              string
+	Day              pgtype.Text
 	Title            string
 	Protein          string
 	Minutes          int32
@@ -97,6 +111,10 @@ type Meal struct {
 	Servings         int32
 	AfterBabyPortion []string
 	CreatedAt        time.Time
+	MealType         string
+	Position         int32
+	RecipeID         uuid.NullUUID
+	AddedFrom        string
 }
 
 type Member struct {
@@ -126,18 +144,18 @@ type Plan struct {
 }
 
 type Profile struct {
-	HouseholdID    uuid.UUID
-	DinnersPerWeek int32
-	Servings       int32
-	SpiceLevel     string
-	OnePot         bool
-	ProteinMix     []byte
-	Avoid          []string
-	Shop           string
-	ShoppingDay    string
-	BabyPortions   bool
-	Language       string
-	UpdatedAt      time.Time
+	HouseholdID     uuid.UUID
+	People          int32
+	SpiceLevel      string
+	OnePot          bool
+	ProteinMix      []byte
+	Shop            string
+	ShoppingDay     string
+	BabyPortions    bool
+	Language        string
+	UpdatedAt       time.Time
+	MealTargets     []byte
+	AutoConfirmTime pgtype.Time
 }
 
 type Recipe struct {

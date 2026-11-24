@@ -143,7 +143,7 @@ func (f *fakePlanner) Active(_ context.Context, s domain.Scope) (domain.List, er
 			sec.Items = append(sec.Items, r.item)
 		}
 	}
-	return domain.List{PlanID: p.ID, Sections: []domain.ListSection{sec}}, nil
+	return domain.List{PlanID: p.ID, CheckHome: []domain.ListItem{}, Sections: []domain.ListSection{sec}}, nil
 }
 
 func (f *fakePlanner) Rebuild(context.Context, domain.Scope, uuid.UUID) (domain.List, error) {
@@ -163,6 +163,10 @@ func (f *fakePlanner) AddItem(_ context.Context, s domain.Scope, name, section s
 	f.mu.Unlock()
 	f.hub.Publish(s.HouseholdID, events.Event{Kind: events.ItemChanged, ItemID: it.ID})
 	return it, nil
+}
+
+func (f *fakePlanner) SetHaveIt(context.Context, domain.Scope, uuid.UUID, *bool) (domain.ListItem, error) {
+	return domain.ListItem{}, domain.ErrNotImplemented
 }
 
 func (f *fakePlanner) SetChecked(_ context.Context, s domain.Scope, itemID uuid.UUID, checked bool) (domain.ListItem, error) {

@@ -1,20 +1,21 @@
 package web
 
-import (
-	"strings"
-
-	"github.com/Zagoman/meal-planner/internal/domain"
-)
+import "github.com/Zagoman/meal-planner/internal/domain"
 
 var spiceLevels = []domain.SpiceLevel{domain.SpiceNone, domain.SpiceMild, domain.SpiceMedium, domain.SpiceHot}
 
 var proteins = []domain.Protein{domain.ProteinChicken, domain.ProteinFish, domain.ProteinVegetarian, domain.ProteinOther}
 
-templ ProfilePage(p domain.Profile, sections []domain.Section, pantry []domain.PantryItem) {
+templ ProfilePage(p domain.Profile, avoid []domain.AvoidItem, sections []domain.Section, pantry []domain.PantryItem) {
 	@Layout("Profile", TabProfile) {
 		<section class="card">
 			<h2>Preferences</h2>
 			@PrefsForm(p, false)
+		</section>
+		<section class="card">
+			<h2>Never eat</h2>
+			<p class="muted small">Claude never plans a meal with these.</p>
+			@AvoidList(avoid)
 		</section>
 		<section class="card">
 			<h2>Shop sections</h2>
@@ -25,21 +26,27 @@ templ ProfilePage(p domain.Profile, sections []domain.Section, pantry []domain.P
 			<h2>Pantry</h2>
 			@PantryForm(pantry, false)
 		</section>
+		<p><a class="button" href="/household">Household, members and sign-in</a></p>
 	}
 }
 
 templ PrefsForm(p domain.Profile, saved bool) {
 	<form id="prefs" class="stack" action="/profile" method="post" hx-post="/profile" hx-swap="outerHTML">
-		<div class="row">
-			<label>
-				Dinners per week
-				<input type="number" name="dinners_per_week" min="1" max="7" required value={ itoa(p.DinnersPerWeek) }/>
-			</label>
-			<label>
-				Servings
-				<input type="number" name="servings" min="1" max="12" required value={ itoa(p.Servings) }/>
-			</label>
-		</div>
+		<fieldset>
+			<legend>Meals per week</legend>
+			<div class="row">
+				for _, t := range domain.PlannedMealTypes {
+					<label>
+						{ t.Label() }
+						<input type="number" inputmode="numeric" name={ "meals_" + string(t) } min="0" max="14" required value={ itoa(p.MealTargets[t]) }/>
+					</label>
+				}
+			</div>
+		</fieldset>
+		<label>
+			People
+			<input type="number" inputmode="numeric" name="people" min="1" max="12" required value={ itoa(p.People) }/>
+		</label>
 		<fieldset>
 			<legend>Dinners per week by protein</legend>
 			<div class="row">
@@ -61,10 +68,6 @@ templ PrefsForm(p domain.Profile, saved bool) {
 		</label>
 		<label class="check"><input type="checkbox" name="one_pot" value="on" checked?={ p.OnePot }/> One-pot meals only</label>
 		<label class="check"><input type="checkbox" name="baby_portions" value="on" checked?={ p.BabyPortions }/> Take out a baby portion before salt, stock and cheese</label>
-		<label>
-			Never use (one per line)
-			<textarea name="avoid" rows="3">{ strings.Join(p.Avoid, "\n") }</textarea>
-		</label>
 		<div class="row">
 			<label>
 				Shop
@@ -77,6 +80,10 @@ templ PrefsForm(p domain.Profile, saved bool) {
 						<option value={ string(d) } selected?={ d == p.ShoppingDay }>{ dayName(d) }</option>
 					}
 				</select>
+			</label>
+			<label>
+				Plan confirms at
+				<input type="time" name="auto_confirm_time" required value={ p.AutoConfirmTime }/>
 			</label>
 		</div>
 		<label>
@@ -110,7 +117,7 @@ templ SectionsList(sections []domain.Section) {
 templ PantryForm(pantry []domain.PantryItem, saved bool) {
 	<form id="pantry" class="stack" action="/profile/pantry" method="post" hx-post="/profile/pantry" hx-swap="outerHTML">
 		<label>
-			Things you always have at home (one per line). They go in a “check the pantry” section at the end of the list.
+			Things you usually have at home (one per line). They go under “Check at home” at the top of the list.
 			<textarea name="pantry" rows="6">{ pantryText(pantry) }</textarea>
 		</label>
 		<div class="row end">
@@ -120,4 +127,30 @@ templ PantryForm(pantry []domain.PantryItem, saved bool) {
 			<button type="submit">Save pantry</button>
 		</div>
 	</form>
+}
+
+// AvoidList is the avoid list with a remove button per name and an add form.
+templ AvoidList(items []domain.AvoidItem) {
+	<div id="avoid-list" class="stack">
+		if len(items) == 0 {
+			<p class="muted small">Nothing yet.</p>
+		} else {
+			<ul class="chips">
+				for _, a := range items {
+					<li class="chip">
+						<span>{ a.Name }</span>
+						<form method="post" action={ templ.SafeURL("/profile/avoid/" + a.ID.String() + "/delete") }
+							hx-delete={ "/profile/avoid/" + a.ID.String() } hx-target="#avoid-list" hx-swap="outerHTML">
+							<button type="submit" class="icon" aria-label={ "Remove " + a.Name }>×</button>
+						</form>
+					</li>
+				}
+			</ul>
+		}
+		<form class="add" method="post" action="/profile/avoid" hx-post="/profile/avoid" hx-target="#avoid-list" hx-swap="outerHTML">
+			<label class="visually-hidden" for="avoid-name">Food to avoid</label>
+			<input id="avoid-name" name="name" required maxlength="100" placeholder="E.g. mushrooms" autocomplete="off"/>
+			<button type="submit">Add</button>
+		</form>
+	</div>
 }

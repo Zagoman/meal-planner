@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Zagoman/meal-planner/internal/db"
@@ -29,8 +30,9 @@ func activePlan(t *testing.T, pool *pgxpool.Pool, s domain.Scope, ings ...domain
 		t.Fatal(err)
 	}
 	m, err := q.CreateMeal(ctx, db.CreateMealParams{
-		HouseholdID: s.HouseholdID, PlanID: p.ID, Day: "monday", Title: "Stew", Protein: "other",
-		Minutes: 30, OnePot: true, Servings: 2, AfterBabyPortion: []string{},
+		HouseholdID: s.HouseholdID, PlanID: p.ID, Day: pgtype.Text{String: "monday", Valid: true}, MealType: "dinner",
+		Title: "Stew", Protein: "other", Minutes: 30, OnePot: true, Servings: 2, AfterBabyPortion: []string{},
+		AddedFrom: "claude",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +86,7 @@ func TestListLifecycle(t *testing.T) {
 		domain.Ingredient{Name: "carrots", Qty: 400, Unit: "g", Section: "produce"},
 		domain.Ingredient{Name: "salt", Qty: 0, Unit: "", Section: "spices"},
 		domain.Ingredient{Name: "cod", Qty: 300, Unit: "g", Section: "meat_fish"},
+		domain.Ingredient{Name: "cold water", Qty: 500, Unit: "ml", Section: "other"},
 	)
 	q := db.New(pool)
 	if err := q.InsertPantryItem(ctx, db.InsertPantryItemParams{HouseholdID: a.HouseholdID, Name: "Salt", NormalizedName: "salt"}); err != nil {
@@ -97,13 +100,48 @@ func TestListLifecycle(t *testing.T) {
 	if e := next(t, ch); e.Kind != events.ListRebuilt {
 		t.Errorf("event %+v", e)
 	}
-	if list.PlanID != planID || len(list.Sections) != 3 {
+	// Salt is under Check at home only; water is never listed.
+	if list.PlanID != planID || len(list.Sections) != 2 || len(list.CheckHome) != 1 {
 		t.Fatalf("list %+v", list)
 	}
-	if last := list.Sections[len(list.Sections)-1]; last.Key != domain.PantryCheckSection || last.Items[0].Name != "Salt" {
-		t.Errorf("pantry section not last: %+v", last)
+	salt := list.CheckHome[0]
+	if salt.Name != "Salt" || !salt.CheckHome || salt.HaveIt != nil || salt.Section != "spices" {
+		t.Errorf("check at home: %+v", salt)
 	}
+	if done, total := list.Progress(); done != 0 || total != 2 {
+		t.Errorf("progress %d/%d counts pantry items", done, total)
+	}
+
+	// Buy moves salt into its section; Have it hides it again.
+	yes, no := true, false
+	if _, err := svc.SetHaveIt(ctx, a, salt.ID, &no); err != nil {
+		t.Fatal(err)
+	}
+	next(t, ch)
+	list, _ = svc.Active(ctx, a)
+	if _, ok := byName(list)["Salt"]; !ok || len(list.CheckHome) != 1 || *list.CheckHome[0].HaveIt {
+		t.Errorf("after Buy: %+v", list)
+	}
+	if _, total := list.Progress(); total != 3 {
+		t.Errorf("Buy item not counted: %d", total)
+	}
+	if _, err := svc.SetHaveIt(ctx, a, salt.ID, &yes); err != nil {
+		t.Fatal(err)
+	}
+	next(t, ch)
+	list, _ = svc.Active(ctx, a)
+	if _, ok := byName(list)["Salt"]; ok {
+		t.Errorf("Have it item still in a section: %+v", list)
+	}
+	// An answer survives a rebuild.
+	if list, err = svc.Rebuild(ctx, a, planID); err != nil || list.CheckHome[0].HaveIt == nil || !*list.CheckHome[0].HaveIt {
+		t.Errorf("answer lost on rebuild: %+v %v", list.CheckHome, err)
+	}
+	next(t, ch)
 	items := byName(list)
+	if _, err := svc.SetHaveIt(ctx, a, items["Cod"].ID, &yes); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("Have it on a normal item: %v", err)
+	}
 	if c := items["Carrots"]; c.QtyText != "1 bag (1 kg)" || c.NeedText != "need 400 g" {
 		t.Errorf("carrots %+v", c)
 	}
@@ -186,8 +224,8 @@ func TestAddItemValidation(t *testing.T) {
 			t.Errorf("%s: want validation error, got %v", name, err)
 		}
 	}
-	if it, err := svc.AddItem(ctx, a, "Olive oil", domain.PantryCheckSection); err != nil || it.Section != domain.PantryCheckSection {
-		t.Errorf("pantry section: %+v %v", it, err)
+	if _, err := svc.AddItem(ctx, a, "Olive oil", domain.PantryCheckSection); !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("pantry_check is not a section to add to: %v", err)
 	}
 }
 
@@ -215,6 +253,10 @@ func TestListCrossHousehold(t *testing.T) {
 	}
 	if err := svc.DeleteItem(ctx, b, item.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("DeleteItem: %v", err)
+	}
+	have := true
+	if _, err := svc.SetHaveIt(ctx, b, item.ID, &have); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("SetHaveIt: %v", err)
 	}
 	listB, err := svc.Active(ctx, b)
 	if err != nil || listB.PlanID != planB || len(listB.Sections) != 0 {

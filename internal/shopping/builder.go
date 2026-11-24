@@ -2,9 +2,9 @@
 // implements service.Lists.
 //
 // The builder (Build, Group) is pure and holds the list rules: merge by
-// normalized name, sum convertible units, show a buying unit plus the amount
-// needed, order by the household's sections, and put pantry items last under
-// domain.PantryCheckSection.
+// normalized name, sum convertible units, round up to whole buying units and
+// show the amount needed only when it differs, never list water, order by
+// the household's sections, and flag pantry items for "Check at home".
 package shopping
 
 import (
@@ -24,8 +24,9 @@ type Item struct {
 	Name           string
 	NormalizedName string
 	QtyText        string // what to buy: "1 net", or the summed amount "750 g"
-	NeedText       string // what the recipes need when a buying unit is shown: "need 3"
-	Section        string
+	NeedText       string // what the recipes need when it differs from QtyText: "need 3"
+	Section        string // the real shop section, also for pantry items
+	CheckHome      bool   // on the household's pantry: shown under Check at home
 }
 
 // buyingUnit is how a shop sells something: a net of 5 onions, a 1 kg bag.
@@ -61,16 +62,17 @@ var buyingUnits = map[string][]buyingUnit{
 }
 
 // Build merges ingredients into shopping-list items, ordered like the
-// household's sections with pantry items last. Ingredients whose normalized
-// name is on the pantry list go to domain.PantryCheckSection. A section key
-// the household does not have falls back to its last section (normally
-// "other"). The result never contains two items with the same NormalizedName.
+// household's sections. Ingredients whose normalized name is on the pantry
+// list are flagged CheckHome and keep their section. A section key the
+// household does not have falls back to its last section (normally "other").
+// Water is left out. The result never contains two items with the same
+// NormalizedName.
 func Build(ingredients []domain.Ingredient, sections []domain.Section, pantry []string) []Item {
 	known := map[string]bool{}
 	for _, s := range sections {
 		known[s.Key] = true
 	}
-	fallback := domain.PantryCheckSection
+	fallback := "other"
 	if len(sections) > 0 {
 		fallback = sortedSections(sections)[len(sections)-1].Key
 	}
@@ -91,7 +93,7 @@ func Build(ingredients []domain.Ingredient, sections []domain.Section, pantry []
 		if key == "" {
 			key = Normalize(ing.Name)
 		}
-		if key == "" {
+		if key == "" || IsWater(key) || IsWater(ing.Name) {
 			continue
 		}
 		a := byKey[key]
@@ -110,10 +112,7 @@ func Build(ingredients []domain.Ingredient, sections []domain.Section, pantry []
 	items := make([]Item, 0, len(order))
 	for _, key := range order {
 		a := byKey[key]
-		it := Item{NormalizedName: key, Section: a.section, Name: displayName(key)}
-		if onPantry[key] {
-			it.Section = domain.PantryCheckSection
-		}
+		it := Item{NormalizedName: key, Section: a.section, Name: displayName(key), CheckHome: onPantry[key]}
 		it.QtyText, it.NeedText = quantityTexts(key, a.amounts)
 		if bu, ok := matchBuyingUnit(key, a.amounts); ok && bu.name != "" {
 			it.Name = bu.name
@@ -132,7 +131,9 @@ func Build(ingredients []domain.Ingredient, sections []domain.Section, pantry []
 }
 
 // quantityTexts returns ("1 net", "need 3") when a buying unit fits, else
-// (summed amount, "").
+// (summed amount, ""). Buying units and counted things are always whole
+// ("1 net", never "0.5 net"; 1.5 lemons is "2"); "need" is shown only when
+// it differs from what is bought.
 func quantityTexts(key string, a amounts) (qty, need string) {
 	if bu, ok := matchBuyingUnit(key, a); ok {
 		total := a[bu.dim]
@@ -144,9 +145,20 @@ func quantityTexts(key string, a amounts) (qty, need string) {
 		if packs != 1 {
 			label = bu.plural
 		}
-		return num(packs) + " " + label, "need " + formatAmount(bu.dim, total)
+		qty = num(packs) + " " + label
+		if math.Abs(packs*bu.size-total) > 1e-9 {
+			need = "need " + formatAmount(bu.dim, total)
+		}
+		return qty, need
 	}
-	return a.String(), ""
+	whole := amounts{}
+	for d, q := range a {
+		if strings.HasPrefix(d, countDim) {
+			q = math.Ceil(q - 1e-9)
+		}
+		whole[d] = q
+	}
+	return whole.String(), ""
 }
 
 // matchBuyingUnit applies only when everything needed is in one dimension
@@ -198,46 +210,60 @@ func sectionRank(sections []domain.Section) func(string) int {
 	}
 }
 
-// PantryCheckName is the display name of domain.PantryCheckSection.
+// PantryCheckName is the display name of the Check at home group.
 const PantryCheckName = "Check at home"
 
-// Group arranges stored items into the display list: the household's
-// sections in order (empty ones omitted), unknown section keys in an "Other"
-// group after them, and domain.PantryCheckSection last. Inside a section
-// items are sorted by name, so ticking never moves an item.
+// Group arranges stored items into the display list. CheckHome holds every
+// pantry item (answered or not), sorted by name. Sections are the
+// household's sections in order (empty ones omitted), unknown section keys
+// in a group after them, holding everything to buy: pantry items appear
+// there only once answered Buy. Inside a section items are sorted by name,
+// so ticking never moves an item.
 func Group(planID uuid.UUID, items []domain.ListItem, sections []domain.Section) domain.List {
-	names := map[string]string{domain.PantryCheckSection: PantryCheckName}
+	names := map[string]string{}
 	for _, s := range sections {
 		names[s.Key] = s.Name
 	}
 	rank := sectionRank(sections)
+	byName := func(a, b domain.ListItem) int {
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	}
+	list := domain.List{PlanID: planID, CheckHome: []domain.ListItem{}, Sections: []domain.ListSection{}}
 	byKey := map[string]*domain.ListSection{}
 	var keys []string
 	for _, it := range items {
-		ls := byKey[it.Section]
+		if it.CheckHome {
+			list.CheckHome = append(list.CheckHome, it)
+		}
+		if !it.ToBuy() {
+			continue
+		}
+		key := it.Section
+		if key == domain.PantryCheckSection { // legacy rows
+			key = "other"
+		}
+		ls := byKey[key]
 		if ls == nil {
-			name, ok := names[it.Section]
+			name, ok := names[key]
 			if !ok {
-				name = displayName(strings.ReplaceAll(it.Section, "_", " "))
+				name = displayName(strings.ReplaceAll(key, "_", " "))
 			}
-			ls = &domain.ListSection{Key: it.Section, Name: name}
-			byKey[it.Section] = ls
-			keys = append(keys, it.Section)
+			ls = &domain.ListSection{Key: key, Name: name}
+			byKey[key] = ls
+			keys = append(keys, key)
 		}
 		ls.Items = append(ls.Items, it)
 	}
+	slices.SortStableFunc(list.CheckHome, byName)
 	slices.SortStableFunc(keys, func(a, b string) int {
 		if ra, rb := rank(a), rank(b); ra != rb {
 			return ra - rb
 		}
 		return strings.Compare(a, b)
 	})
-	list := domain.List{PlanID: planID, Sections: []domain.ListSection{}}
 	for _, k := range keys {
 		ls := byKey[k]
-		slices.SortStableFunc(ls.Items, func(a, b domain.ListItem) int {
-			return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
-		})
+		slices.SortStableFunc(ls.Items, byName)
 		list.Sections = append(list.Sections, *ls)
 	}
 	return list

@@ -104,7 +104,8 @@ func loadMeal(ctx context.Context, q *db.Queries, sc domain.Scope, mealID uuid.U
 		return domain.Meal{}, err
 	}
 	out := domain.Meal{
-		ID: m.ID, Day: domain.Weekday(m.Day), Title: m.Title, Protein: domain.Protein(m.Protein),
+		ID: m.ID, MealType: domain.MealType(m.MealType), Day: domain.Weekday(m.Day.String),
+		AddedFrom: domain.MealSource(m.AddedFrom), Title: m.Title, Protein: domain.Protein(m.Protein),
 		Minutes: int(m.Minutes), OnePot: m.OnePot, Servings: int(m.Servings),
 		Ingredients: make([]domain.Ingredient, 0, len(ings)), Steps: make([]domain.Step, 0, len(steps)),
 		AfterBabyPortion: nonNil(m.AfterBabyPortion),
@@ -127,10 +128,14 @@ func loadMeal(ctx context.Context, q *db.Queries, sc domain.Scope, mealID uuid.U
 
 func mealToJSON(m domain.Meal) domain.MealJSON {
 	j := domain.MealJSON{
-		Day: m.Day, Title: m.Title, Protein: m.Protein, Minutes: m.Minutes, OnePot: m.OnePot,
+		MealType: m.MealType, Title: m.Title, Protein: m.Protein, Minutes: m.Minutes, OnePot: m.OnePot,
 		Servings: m.Servings, AfterBabyPortion: nonNil(m.AfterBabyPortion),
 		Ingredients: make([]domain.IngredientJSON, 0, len(m.Ingredients)),
 		Steps:       make([]domain.StepJSON, 0, len(m.Steps)),
+	}
+	if m.Day != "" {
+		d := m.Day
+		j.Day = &d
 	}
 	for _, i := range m.Ingredients {
 		j.Ingredients = append(j.Ingredients, domain.IngredientJSON{
@@ -151,9 +156,15 @@ func recipeFromDB(r db.Recipe) (domain.Recipe, error) {
 		return domain.Recipe{}, fmt.Errorf("recipe %s data: %w", r.ID, err)
 	}
 	m := domain.Meal{
-		Day: j.Day, Title: r.Title, Protein: domain.Protein(r.Protein), Minutes: int(r.Minutes),
+		MealType: j.MealType, Title: r.Title, Protein: domain.Protein(r.Protein), Minutes: int(r.Minutes),
 		OnePot: r.OnePot, Servings: int(r.Servings), AfterBabyPortion: nonNil(j.AfterBabyPortion),
 		Ingredients: make([]domain.Ingredient, 0, len(j.Ingredients)), Steps: make([]domain.Step, 0, len(j.Steps)),
+	}
+	if m.MealType == "" { // saved before meal types existed
+		m.MealType = domain.MealDinner
+	}
+	if j.Day != nil {
+		m.Day = *j.Day
 	}
 	for _, i := range j.Ingredients {
 		m.Ingredients = append(m.Ingredients, domain.Ingredient{

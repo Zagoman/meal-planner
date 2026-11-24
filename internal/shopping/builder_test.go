@@ -1,6 +1,7 @@
 package shopping
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -115,6 +116,9 @@ func TestBuildMergesAndUsesBuyingUnits(t *testing.T) {
 		ing("milk", 3, "dl", "dairy_eggs"),
 		ing("paprika", 1, "tsp", "spices"),
 		ing("paprika", 1, "tbsp", "spices"),
+		ing("spaghetti", 500, "g", "dry_goods"), // exactly one pack: no "need"
+		ing("water", 1, "l", "other"),
+		ing("boiling water", 300, "ml", "other"),
 	}, domain.DefaultSections, nil)
 
 	want := []Item{
@@ -123,6 +127,7 @@ func TestBuildMergesAndUsesBuyingUnits(t *testing.T) {
 		{Name: "Chicken thighs", NormalizedName: "chicken thigh", QtyText: "2 packs (500 g)", NeedText: "need 900 g", Section: "meat_fish"},
 		{Name: "Milk", NormalizedName: "milk", QtyText: "1 carton (1 l)", NeedText: "need 300 ml", Section: "dairy_eggs"},
 		{Name: "Rice", NormalizedName: "rice", QtyText: "1 bag (1 kg)", NeedText: "need 200 g", Section: "dry_goods"},
+		{Name: "Spaghetti", NormalizedName: "spaghetti", QtyText: "1 pack (500 g)", NeedText: "", Section: "dry_goods"},
 		{Name: "Paprika", NormalizedName: "paprika", QtyText: "4 tsp", NeedText: "", Section: "spices"},
 	}
 	if len(items) != len(want) {
@@ -144,7 +149,7 @@ func TestBuildPantrySectionsAndFallback(t *testing.T) {
 	}
 	items := Build([]domain.Ingredient{
 		ing("olive oil", 2, "tbsp", "tins_jars"), // pantry, unknown section
-		ing("salt", 0, "", "spices"),             // pantry
+		ing("salt", 0, "", "dairy_eggs"),         // pantry
 		ing("cheddar", 100, "g", "dairy_eggs"),
 		ing("carrots", 3, "pcs", "produce"),
 		ing("tofu", 400, "g", "nonexistent"), // falls back to last section
@@ -152,25 +157,58 @@ func TestBuildPantrySectionsAndFallback(t *testing.T) {
 
 	gotOrder := []string{}
 	for _, it := range items {
-		gotOrder = append(gotOrder, it.Section+":"+it.NormalizedName)
+		gotOrder = append(gotOrder, fmt.Sprintf("%s:%s:%v", it.Section, it.NormalizedName, it.CheckHome))
 	}
 	want := []string{
-		"produce:carrot", "dairy_eggs:cheddar", "zz_last:tofu",
-		"pantry_check:olive oil", "pantry_check:salt",
+		"produce:carrot:false", "dairy_eggs:cheddar:false", "dairy_eggs:salt:true",
+		"zz_last:olive oil:true", "zz_last:tofu:false",
 	}
-	if len(gotOrder) != len(want) {
-		t.Fatalf("got %v", gotOrder)
-	}
-	for i := range want {
-		if gotOrder[i] != want[i] {
-			t.Fatalf("order: got %v, want %v", gotOrder, want)
-		}
+	if fmt.Sprint(gotOrder) != fmt.Sprint(want) {
+		t.Fatalf("order: got %v, want %v", gotOrder, want)
 	}
 	if items[0].QtyText != "1 bag" || items[0].NeedText != "need 3" {
 		t.Errorf("carrots: %+v", items[0])
 	}
-	if items[4].QtyText != "" || items[4].NeedText != "" {
-		t.Errorf("salt to taste should have no quantity: %+v", items[4])
+	if items[2].QtyText != "" || items[2].NeedText != "" {
+		t.Errorf("salt to taste should have no quantity: %+v", items[2])
+	}
+}
+
+func TestBuildRoundsCountsUp(t *testing.T) {
+	t.Parallel()
+	items := Build([]domain.Ingredient{
+		ing("lemon", 0.5, "pcs", "produce"),
+		ing("lemon", 1, "", "produce"),
+		ing("tins of tomatoes", 0.5, "can", "tins_jars"),
+		ing("eggs", 6, "pcs", "dairy_eggs"),
+		ing("onion", 0.5, "pcs", "produce"),
+	}, domain.DefaultSections, nil)
+	got := map[string]string{}
+	for _, it := range items {
+		got[it.NormalizedName] = it.QtyText + "|" + it.NeedText
+	}
+	want := map[string]string{
+		"lemon":          "2|",
+		"tins of tomato": "1 can|",
+		"egg":            "1 box (6)|",
+		"onion":          "1 net|need 0.5",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: got %q, want %q", k, got[k], v)
+		}
+	}
+}
+
+func TestIsWater(t *testing.T) {
+	t.Parallel()
+	for name, want := range map[string]bool{
+		"water": true, "Cold water": true, "boiling water (for the pasta)": true, "ice water": true,
+		"coconut water": false, "sparkling water": false, "watercress": false, "": false,
+	} {
+		if got := IsWater(name); got != want {
+			t.Errorf("IsWater(%q) = %v", name, got)
+		}
 	}
 }
 
@@ -200,8 +238,11 @@ func TestBuildUniqueKeysAndSkipsEmptyNames(t *testing.T) {
 func TestGroup(t *testing.T) {
 	t.Parallel()
 	planID := uuid.New()
+	yes, no := true, false
 	items := []domain.ListItem{
-		{Name: "salt", Section: domain.PantryCheckSection},
+		{Name: "salt", Section: "spices", CheckHome: true},
+		{Name: "Olive oil", Section: "tins_jars", CheckHome: true, HaveIt: &no},
+		{Name: "Cumin", Section: "spices", CheckHome: true, HaveIt: &yes},
 		{Name: "Milk", Section: "dairy_eggs", Checked: true},
 		{Name: "Bananas", Section: "produce"},
 		{Name: "apples", Section: "produce"},
@@ -215,22 +256,26 @@ func TestGroup(t *testing.T) {
 	for _, s := range l.Sections {
 		keys = append(keys, s.Key)
 	}
-	want := []string{"produce", "dairy_eggs", "gone_section", domain.PantryCheckSection}
-	if len(keys) != len(want) {
-		t.Fatalf("keys %v", keys)
+	if want := []string{"produce", "dairy_eggs", "tins_jars", "gone_section"}; fmt.Sprint(keys) != fmt.Sprint(want) {
+		t.Fatalf("keys %v, want %v", keys, want)
 	}
-	for i := range want {
-		if keys[i] != want[i] {
-			t.Fatalf("keys %v, want %v", keys, want)
-		}
+	var home []string
+	for _, it := range l.CheckHome {
+		home = append(home, it.Name)
+	}
+	if fmt.Sprint(home) != "[Cumin Olive oil salt]" {
+		t.Errorf("check at home %v", home)
 	}
 	if l.Sections[0].Name != "Fruit & veg" || l.Sections[0].Items[0].Name != "apples" {
 		t.Errorf("produce section: %+v", l.Sections[0])
 	}
-	if l.Sections[2].Name != "Gone section" || l.Sections[3].Name != PantryCheckName {
-		t.Errorf("names: %q %q", l.Sections[2].Name, l.Sections[3].Name)
+	if l.Sections[3].Name != "Gone section" {
+		t.Errorf("name: %q", l.Sections[3].Name)
 	}
-	if empty := Group(planID, nil, domain.DefaultSections); empty.Sections == nil {
-		t.Error("empty list must have a non-nil sections slice (JSON [])")
+	if done, total := l.Progress(); done != 1 || total != 5 {
+		t.Errorf("progress %d/%d, want 1/5", done, total)
+	}
+	if empty := Group(planID, nil, domain.DefaultSections); empty.Sections == nil || empty.CheckHome == nil {
+		t.Error("empty list must have non-nil slices (JSON [])")
 	}
 }

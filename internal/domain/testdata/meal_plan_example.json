@@ -1,5 +1,6 @@
 {
   "meals": [{
+    "meal_type": "dinner",
     "day": "monday",
     "title": "One-pot chicken and rice",
     "protein": "chicken",

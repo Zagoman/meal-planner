@@ -6,9 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/Zagoman/meal-planner/internal/db"
 	"github.com/Zagoman/meal-planner/internal/domain"
@@ -25,17 +29,35 @@ const (
 )
 
 func (s *Service) Get(ctx context.Context, sc domain.Scope) (domain.Profile, error) {
-	p, err := s.q.GetProfile(ctx, sc.HouseholdID)
+	return getProfile(ctx, s.q, sc)
+}
+
+func getProfile(ctx context.Context, q *db.Queries, sc domain.Scope) (domain.Profile, error) {
+	p, err := q.GetProfile(ctx, sc.HouseholdID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Profile{}, fmt.Errorf("get profile: %w", domain.ErrNotFound)
 	}
 	if err != nil {
 		return domain.Profile{}, fmt.Errorf("get profile: %w", err)
 	}
-	return profileFromDB(p)
+	out, err := profileFromDB(p)
+	if err != nil {
+		return domain.Profile{}, err
+	}
+	items, err := avoidItems(ctx, q, sc)
+	if err != nil {
+		return domain.Profile{}, err
+	}
+	for _, a := range items {
+		out.Avoid = append(out.Avoid, a.Name)
+	}
+	return out, nil
 }
 
+// Put saves the profile. p.Avoid replaces the avoid list when it is not nil
+// (names already on the list keep their entry); nil leaves the list alone.
 func (s *Service) Put(ctx context.Context, sc domain.Scope, p domain.Profile) (domain.Profile, error) {
+	replaceAvoid := p.Avoid != nil
 	p, err := cleanProfile(p)
 	if err != nil {
 		return domain.Profile{}, err
@@ -44,37 +66,84 @@ func (s *Service) Put(ctx context.Context, sc domain.Scope, p domain.Profile) (d
 	if err != nil {
 		return domain.Profile{}, fmt.Errorf("put profile: %w", err)
 	}
-	row, err := s.q.UpdateProfile(ctx, db.UpdateProfileParams{
-		HouseholdID:    sc.HouseholdID,
-		DinnersPerWeek: int32(p.DinnersPerWeek), //nolint:gosec // validated 1..7
-		Servings:       int32(p.Servings),       //nolint:gosec // validated 1..12
-		SpiceLevel:     string(p.SpiceLevel),
-		OnePot:         p.OnePot,
-		ProteinMix:     mix,
-		Avoid:          p.Avoid,
-		Shop:           p.Shop,
-		ShoppingDay:    string(p.ShoppingDay),
-		BabyPortions:   p.BabyPortions,
-		Language:       p.Language,
-	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Profile{}, fmt.Errorf("put profile: %w", domain.ErrNotFound)
-	}
+	targets, err := json.Marshal(p.MealTargets)
 	if err != nil {
 		return domain.Profile{}, fmt.Errorf("put profile: %w", err)
 	}
-	return profileFromDB(row)
+	clock, _ := parseClock(p.AutoConfirmTime) // validated by cleanProfile
+	var out domain.Profile
+	err = s.inTx(ctx, func(q *db.Queries) error {
+		_, err := q.UpdateProfile(ctx, db.UpdateProfileParams{
+			HouseholdID:     sc.HouseholdID,
+			MealTargets:     targets,
+			People:          int32(p.People), //nolint:gosec // validated 1..12
+			SpiceLevel:      string(p.SpiceLevel),
+			OnePot:          p.OnePot,
+			ProteinMix:      mix,
+			Shop:            p.Shop,
+			ShoppingDay:     string(p.ShoppingDay),
+			BabyPortions:    p.BabyPortions,
+			Language:        p.Language,
+			AutoConfirmTime: clock,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if replaceAvoid {
+			keep := make([]string, 0, len(p.Avoid))
+			for _, name := range p.Avoid {
+				keep = append(keep, NormalizeName(name))
+				if _, err := q.InsertAvoidItem(ctx, db.InsertAvoidItemParams{
+					HouseholdID: sc.HouseholdID, Name: name, NormalizedName: NormalizeName(name),
+					AddedBy: memberRef(sc), Source: string(domain.AvoidFromProfile),
+				}); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+					return err
+				}
+			}
+			if err := q.DeleteAvoidItemsNotIn(ctx, db.DeleteAvoidItemsNotInParams{HouseholdID: sc.HouseholdID, Keep: keep}); err != nil {
+				return err
+			}
+		}
+		out, err = getProfile(ctx, q, sc)
+		return err
+	})
+	if err != nil {
+		return domain.Profile{}, fmt.Errorf("put profile: %w", err)
+	}
+	return out, nil
 }
 
 // cleanProfile validates p and normalizes it: avoid entries trimmed,
-// de-duplicated and empty ones dropped; language defaults to "en".
+// de-duplicated (by normalized name) and empty ones dropped; language
+// defaults to "en"; auto-confirm time to 08:00.
 func cleanProfile(p domain.Profile) (domain.Profile, error) {
 	var problems []string
-	if p.DinnersPerWeek < 1 || p.DinnersPerWeek > 7 {
-		problems = append(problems, "dinners_per_week: 1 to 7")
+	targets := map[domain.MealType]int{}
+	for k, v := range p.MealTargets {
+		if !slices.Contains(domain.PlannedMealTypes, k) {
+			problems = append(problems, fmt.Sprintf("meal_targets: unknown meal type %q", k))
+			continue
+		}
+		if v < 0 || v > domain.MaxMealsPerType {
+			problems = append(problems, fmt.Sprintf("meal_targets.%s: 0 to %d", k, domain.MaxMealsPerType))
+			continue
+		}
+		targets[k] = v
 	}
-	if p.Servings < 1 || p.Servings > 12 {
-		problems = append(problems, "servings: 1 to 12")
+	for _, t := range domain.PlannedMealTypes {
+		if _, ok := targets[t]; !ok {
+			targets[t] = 0
+		}
+	}
+	p.MealTargets = targets
+	if len(problems) == 0 && p.TotalMeals() == 0 {
+		problems = append(problems, "meal_targets: at least one meal a week")
+	}
+	if p.People < 1 || p.People > 12 {
+		problems = append(problems, "people: 1 to 12")
 	}
 	switch p.SpiceLevel {
 	case domain.SpiceNone, domain.SpiceMild, domain.SpiceMedium, domain.SpiceHot:
@@ -83,6 +152,12 @@ func cleanProfile(p domain.Profile) (domain.Profile, error) {
 	}
 	if !p.ShoppingDay.Valid() {
 		problems = append(problems, "shopping_day: a lowercase English weekday")
+	}
+	if strings.TrimSpace(p.AutoConfirmTime) == "" {
+		p.AutoConfirmTime = "08:00"
+	}
+	if _, err := parseClock(p.AutoConfirmTime); err != nil {
+		problems = append(problems, "auto_confirm_time: HH:MM, 24-hour")
 	}
 	mix := map[domain.Protein]int{}
 	for k, v := range p.ProteinMix {
@@ -99,24 +174,8 @@ func cleanProfile(p domain.Profile) (domain.Profile, error) {
 		mix[k] = v
 	}
 	p.ProteinMix = mix
-	seen := map[string]bool{}
-	avoid := []string{}
-	for _, a := range p.Avoid {
-		a = strings.Join(strings.Fields(a), " ")
-		key := strings.ToLower(a)
-		if a == "" || seen[key] {
-			continue
-		}
-		if len(a) > maxText {
-			problems = append(problems, "avoid: entries at most 100 characters")
-			break
-		}
-		seen[key] = true
-		avoid = append(avoid, a)
-	}
-	if len(avoid) > maxAvoid {
-		problems = append(problems, "avoid: at most 50 entries")
-	}
+	avoid, avoidProblems := cleanAvoid(p.Avoid)
+	problems = append(problems, avoidProblems...)
 	p.Avoid = avoid
 	p.Shop = strings.TrimSpace(p.Shop)
 	if len(p.Shop) > maxText {
@@ -135,6 +194,42 @@ func cleanProfile(p domain.Profile) (domain.Profile, error) {
 	return p, nil
 }
 
+func cleanAvoid(in []string) ([]string, []string) {
+	var problems []string
+	seen := map[string]bool{}
+	avoid := []string{}
+	for _, a := range in {
+		a = strings.Join(strings.Fields(a), " ")
+		key := NormalizeName(a)
+		if key == "" || seen[key] {
+			continue
+		}
+		if len(a) > maxText {
+			problems = append(problems, "avoid: entries at most 100 characters")
+			break
+		}
+		seen[key] = true
+		avoid = append(avoid, a)
+	}
+	if len(avoid) > maxAvoid {
+		problems = append(problems, "avoid: at most 50 entries")
+	}
+	return avoid, problems
+}
+
+var clockRe = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):([0-5][0-9])$`)
+
+// parseClock reads "08:00" as a time of day.
+func parseClock(s string) (pgtype.Time, error) {
+	m := clockRe.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return pgtype.Time{}, fmt.Errorf("bad time %q", s)
+	}
+	h, _ := strconv.Atoi(m[1])
+	mi, _ := strconv.Atoi(m[2])
+	return pgtype.Time{Microseconds: int64(h*60+mi) * 60_000_000, Valid: true}, nil
+}
+
 func profileFromDB(p db.Profile) (domain.Profile, error) {
 	mix := map[domain.Protein]int{}
 	if len(p.ProteinMix) > 0 {
@@ -142,22 +237,133 @@ func profileFromDB(p db.Profile) (domain.Profile, error) {
 			return domain.Profile{}, fmt.Errorf("profile protein_mix: %w", err)
 		}
 	}
-	avoid := p.Avoid
-	if avoid == nil {
-		avoid = []string{}
+	targets := map[domain.MealType]int{}
+	if len(p.MealTargets) > 0 {
+		if err := json.Unmarshal(p.MealTargets, &targets); err != nil {
+			return domain.Profile{}, fmt.Errorf("profile meal_targets: %w", err)
+		}
+	}
+	for _, t := range domain.PlannedMealTypes {
+		if _, ok := targets[t]; !ok {
+			targets[t] = 0
+		}
+	}
+	clock := "08:00"
+	if p.AutoConfirmTime.Valid {
+		m := p.AutoConfirmTime.Microseconds / 60_000_000
+		clock = fmt.Sprintf("%02d:%02d", m/60, m%60)
 	}
 	return domain.Profile{
-		DinnersPerWeek: int(p.DinnersPerWeek),
-		Servings:       int(p.Servings),
-		SpiceLevel:     domain.SpiceLevel(p.SpiceLevel),
-		OnePot:         p.OnePot,
-		ProteinMix:     mix,
-		Avoid:          avoid,
-		Shop:           p.Shop,
-		ShoppingDay:    domain.Weekday(p.ShoppingDay),
-		BabyPortions:   p.BabyPortions,
-		Language:       p.Language,
+		MealTargets:     targets,
+		People:          int(p.People),
+		SpiceLevel:      domain.SpiceLevel(p.SpiceLevel),
+		OnePot:          p.OnePot,
+		ProteinMix:      mix,
+		Avoid:           []string{},
+		Shop:            p.Shop,
+		ShoppingDay:     domain.Weekday(p.ShoppingDay),
+		AutoConfirmTime: clock,
+		BabyPortions:    p.BabyPortions,
+		Language:        p.Language,
 	}, nil
+}
+
+// AvoidItems is the household's avoid list, by name.
+func (s *Service) AvoidItems(ctx context.Context, sc domain.Scope) ([]domain.AvoidItem, error) {
+	return avoidItems(ctx, s.q, sc)
+}
+
+func avoidItems(ctx context.Context, q *db.Queries, sc domain.Scope) ([]domain.AvoidItem, error) {
+	rows, err := q.ListAvoidItems(ctx, sc.HouseholdID)
+	if err != nil {
+		return nil, fmt.Errorf("avoid items: %w", err)
+	}
+	out := make([]domain.AvoidItem, len(rows))
+	for i, r := range rows {
+		out[i] = avoidFromDB(r)
+	}
+	return out, nil
+}
+
+// AddAvoid adds one name to the avoid list; a name already on it (by
+// normalized name) returns the existing entry.
+func (s *Service) AddAvoid(ctx context.Context, sc domain.Scope, name string, source domain.AvoidSource) (domain.AvoidItem, error) {
+	name = strings.Join(strings.Fields(name), " ")
+	norm := NormalizeName(name)
+	var problems []string
+	if norm == "" {
+		problems = append(problems, "name is required")
+	}
+	if len(name) > maxText {
+		problems = append(problems, "name: at most 100 characters")
+	}
+	switch source {
+	case domain.AvoidFromSetup, domain.AvoidFromRecipe, domain.AvoidFromProfile:
+	default:
+		problems = append(problems, fmt.Sprintf("unknown source %q", source))
+	}
+	if len(problems) > 0 {
+		return domain.AvoidItem{}, &domain.ValidationError{Problems: problems}
+	}
+	var out domain.AvoidItem
+	err := s.inTx(ctx, func(q *db.Queries) error {
+		row, err := q.InsertAvoidItem(ctx, db.InsertAvoidItemParams{
+			HouseholdID: sc.HouseholdID, Name: name, NormalizedName: norm,
+			AddedBy: memberRef(sc), Source: string(source),
+		})
+		if err == nil {
+			out = avoidFromDB(row)
+			rows, err := q.ListAvoidItems(ctx, sc.HouseholdID)
+			if err != nil {
+				return err
+			}
+			if len(rows) > maxAvoid {
+				return &domain.ValidationError{Problems: []string{"avoid: at most 50 entries"}}
+			}
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		rows, err := q.ListAvoidItems(ctx, sc.HouseholdID)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			if r.NormalizedName == norm {
+				out = avoidFromDB(r)
+				return nil
+			}
+		}
+		return errors.New("avoid item vanished")
+	})
+	if err != nil {
+		return domain.AvoidItem{}, fmt.Errorf("add avoid item: %w", err)
+	}
+	return out, nil
+}
+
+// DeleteAvoid removes one entry of the avoid list.
+func (s *Service) DeleteAvoid(ctx context.Context, sc domain.Scope, id uuid.UUID) error {
+	n, err := s.q.DeleteAvoidItem(ctx, db.DeleteAvoidItemParams{ID: id, HouseholdID: sc.HouseholdID})
+	if err != nil {
+		return fmt.Errorf("delete avoid item: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("delete avoid item: %w", domain.ErrNotFound)
+	}
+	return nil
+}
+
+func avoidFromDB(r db.AvoidItem) domain.AvoidItem {
+	return domain.AvoidItem{
+		ID: r.ID, Name: r.Name, NormalizedName: r.NormalizedName,
+		Source: domain.AvoidSource(r.Source), AddedAt: r.AddedAt,
+	}
+}
+
+func memberRef(sc domain.Scope) uuid.NullUUID {
+	return uuid.NullUUID{UUID: sc.MemberID, Valid: sc.MemberID != uuid.Nil}
 }
 
 func (s *Service) Sections(ctx context.Context, sc domain.Scope) ([]domain.Section, error) {

@@ -37,7 +37,7 @@ var isoCases = []isoCase{
 	{"PATCH", "/list/items/{item_id}", `{"checked":true}`, 404, 200},
 	{"DELETE", "/list/items/{item_id}", ``, 404, 204},
 	{"GET", "/profile", ``, 200, 200},
-	{"PUT", "/profile", `{"dinners_per_week":3,"servings":2,"spice_level":"hot","one_pot":true,"protein_mix":{"fish":3},"avoid":["b-avoid"],"shop":"B shop","shopping_day":"monday","baby_portions":false,"language":"en"}`, 200, 200},
+	{"PUT", "/profile", `{"meal_targets":{"dinner":3},"people":2,"spice_level":"hot","one_pot":true,"protein_mix":{"fish":3},"avoid":["b-avoid"],"shop":"B shop","shopping_day":"monday","baby_portions":false,"language":"en"}`, 200, 200},
 	{"GET", "/sections", ``, 200, 200},
 	{"PUT", "/sections", `[{"key":"b_only","name":"B only"}]`, 200, 200},
 	{"GET", "/pantry", ``, 200, 200},

@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/Zagoman/meal-planner/internal/db"
 	"github.com/Zagoman/meal-planner/internal/domain"
 	"github.com/Zagoman/meal-planner/internal/household"
@@ -81,7 +83,8 @@ func (f fixture) meal(t *testing.T, sc domain.Scope) uuid.UUID {
 		t.Fatal(err)
 	}
 	m, err := f.q.CreateMeal(ctx, db.CreateMealParams{
-		HouseholdID: sc.HouseholdID, PlanID: p.ID, Day: "tuesday", Title: "Fish pie", Protein: "fish",
+		HouseholdID: sc.HouseholdID, PlanID: p.ID, Day: pgtype.Text{String: "tuesday", Valid: true}, MealType: "dinner", AddedFrom: "claude",
+		Title: "Fish pie", Protein: "fish",
 		Minutes: 40, OnePot: false, Servings: 3, AfterBabyPortion: []string{"salt"},
 	})
 	if err != nil {
@@ -123,7 +126,7 @@ func TestCreateHousehold(t *testing.T) {
 		t.Errorf("sections: %+v %v", secs, err)
 	}
 	p, err := f.s.Get(ctx, sc)
-	if err != nil || p.DinnersPerWeek != 4 || p.ShoppingDay != domain.Saturday {
+	if err != nil || p.MealTargets[domain.MealDinner] != 4 || p.People != 2 || p.AutoConfirmTime != "08:00" || p.ShoppingDay != domain.Saturday {
 		t.Errorf("profile: %+v %v", p, err)
 	}
 	m, err := f.q.GetMemberByEmail(ctx, "root@example.test")
@@ -303,8 +306,48 @@ func TestProfileSectionsPantryIsolation(t *testing.T) {
 		len(pan) != 1 || pan[0].NormalizedName != "alpha salt" {
 		t.Errorf("A changed: %+v %+v %+v", pa, secs, pan)
 	}
+
+	// Avoid list: Put replaces it, AddAvoid/DeleteAvoid change one entry,
+	// and B can neither see nor delete A's entries.
+	pa.Avoid = []string{"Mushrooms", "mushroom", " leek "}
+	pa.MealTargets = map[domain.MealType]int{domain.MealBreakfast: 7, domain.MealDinner: 4, domain.MealBaking: 1}
+	pa.AutoConfirmTime = "7:30"
+	got, err := f.s.Put(ctx, f.a, pa)
+	if err != nil || len(got.Avoid) != 2 || got.MealTargets[domain.MealBreakfast] != 7 || got.MealTargets[domain.MealLunch] != 0 ||
+		got.AutoConfirmTime != "07:30" {
+		t.Fatalf("put with avoid: %+v %v", got, err)
+	}
+	leek, err := f.s.AddAvoid(ctx, f.a, "Leeks", domain.AvoidFromRecipe)
+	if err != nil || leek.Name != "leek" {
+		t.Errorf("adding a name already on the list returns it: %+v %v", leek, err)
+	}
+	cor, err := f.s.AddAvoid(ctx, f.a, "Coriander", domain.AvoidFromRecipe)
+	if err != nil || cor.Source != domain.AvoidFromRecipe || cor.NormalizedName != "coriander" {
+		t.Fatalf("add avoid: %+v %v", cor, err)
+	}
+	if _, err := f.s.AddAvoid(ctx, f.a, " ", domain.AvoidFromProfile); !errors.Is(err, domain.ErrValidation) {
+		t.Errorf("empty avoid: %v", err)
+	}
+	if items, _ := f.s.AvoidItems(ctx, f.b); len(items) != 0 {
+		t.Errorf("B sees A's avoid list: %+v", items)
+	}
+	if err := f.s.DeleteAvoid(ctx, f.b, cor.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("B deletes A's avoid item: %v", err)
+	}
+	if err := f.s.DeleteAvoid(ctx, f.a, cor.ID); err != nil {
+		t.Fatal(err)
+	}
+	// nil Avoid leaves the list alone.
+	got.Avoid = nil
+	if got, _ = f.s.Put(ctx, f.a, got); len(got.Avoid) != 2 {
+		t.Errorf("nil avoid changed the list: %+v", got.Avoid)
+	}
 	bad := []domain.Profile{
-		func() domain.Profile { x := pa; x.Servings = 0; return x }(),
+		func() domain.Profile { x := pa; x.People = 0; return x }(),
+		func() domain.Profile { x := pa; x.MealTargets = map[domain.MealType]int{}; return x }(),
+		func() domain.Profile { x := pa; x.MealTargets = map[domain.MealType]int{"dinner": 15}; return x }(),
+		func() domain.Profile { x := pa; x.MealTargets = map[domain.MealType]int{"brunch": 2}; return x }(),
+		func() domain.Profile { x := pa; x.AutoConfirmTime = "25:00"; return x }(),
 		func() domain.Profile { x := pa; x.SpiceLevel = "nuclear"; return x }(),
 		func() domain.Profile { x := pa; x.ShoppingDay = "Monday"; return x }(),
 		func() domain.Profile { x := pa; x.ProteinMix = map[domain.Protein]int{"tofu": 1}; return x }(),

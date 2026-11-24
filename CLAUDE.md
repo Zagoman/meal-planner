@@ -1,8 +1,13 @@
 # Meal Planner
 
-Self-hosted, multi-household meal planner. A household types a request, the
-server asks Claude for meals as JSON, builds a shopping list grouped by shop
-section, and members tick it off live on their phones.
+Self-hosted, multi-household meal planner. The server asks Claude for a week
+of meals as JSON (breakfasts, lunches, dinners and baking, counts from the
+household profile), builds a shopping list grouped by shop section, and
+members tick it off live on their phones.
+
+The build plan is the dev handoff (wireframes on the design canvas), done in
+five windows; `HANDOVER.md` says which windows are done, what is next and the
+known issues.
 
 One Go binary: JSON API under `/api/*` (bearer token), server-rendered web UI
 everywhere else (session cookie, templ + htmx + SSE), Postgres.
@@ -35,33 +40,36 @@ Never edit generated files: `internal/db/*.sql.go`, `models.go`, `querier.go`,
    into templates.
 3. **Tests never call the real Claude API.** Use `claude.NewFake(...)`. The
    real client is only constructed in `cmd/server`.
-4. **Generation never destroys the current plan.** A new plan is a `draft`;
-   it becomes `active` (and the old one `archived`) in one transaction only
-   after validation passes. On failure return an error wrapping
-   `domain.ErrGeneration`. Whole call under 60 s (`Config.GenerateTimeout`).
+4. **Generation never destroys the current plan.** A new plan is saved only
+   after validation passes; it becomes `active` (the old one `archived`) in
+   one transaction. On failure return an error wrapping
+   `domain.ErrGeneration` and leave existing data unchanged. Whole call under
+   60 s (`Config.GenerateTimeout`). `active` is what the handoff calls
+   "confirmed"; from window 2 a `draft` is a validated plan waiting for the
+   household to review it.
 
-## Layout and ownership
+## Layout
 
-| Path | What | Owner |
-|---|---|---|
-| `cmd/server` | wiring: config, DB, migrations, services, HTTP server | 0 (packages edit only their wiring lines) |
-| `migrations/` | goose SQL, embedded, applied on startup | 0, frozen |
-| `internal/db/` | sqlc output + `queries/*.sql` | 0, frozen |
-| `internal/domain/` | `Scope`, types, errors, meal JSON schema | 0, frozen |
-| `internal/service/` | service interfaces + `Unimplemented` | 0, frozen |
-| `internal/openapi/` | `openapi.yaml`: the `/api` contract | 0, frozen |
-| `internal/events/` | per-household pub/sub for SSE | 0, frozen |
-| `internal/httpx/` | JSON + error→status helpers | 0, frozen |
-| `internal/config`, `internal/database`, `internal/app`, `internal/server`, `internal/testutil` | plumbing | 0, frozen |
-| `internal/api/`, `internal/auth/`, `internal/household/` | JSON routes, sessions/tokens, invites, Households/Profiles/Feedback services, isolation tests | A |
-| `internal/planner/`, `internal/shopping/`, `internal/claude/anthropic.go` | prompt, Claude client, validation + retry, Plans/Lists services, list builder | B |
-| `internal/web/`, `web/` | templ pages, htmx partials, SSE, service worker, offline tick queue | C |
-| `deploy/` | Dockerfile, compose, backups, `make deploy` | D |
+| Path | What |
+|---|---|
+| `cmd/server` | wiring: config, DB, migrations, services, HTTP server |
+| `migrations/` | goose SQL, embedded, applied on startup |
+| `internal/db/` | sqlc output + `queries/*.sql` |
+| `internal/domain/` | `Scope`, types, errors, meal JSON schema |
+| `internal/service/` | service interfaces + `Unimplemented` |
+| `internal/openapi/` | `openapi.yaml`: the `/api` contract |
+| `internal/events/` | per-household pub/sub for SSE |
+| `internal/httpx/` | JSON + error→status helpers |
+| `internal/config`, `internal/database`, `internal/app`, `internal/server`, `internal/testutil` | plumbing |
+| `internal/api/`, `internal/auth/`, `internal/household/` | JSON routes, sessions/tokens, invites, Households/Profiles/Feedback services, isolation tests |
+| `internal/planner/`, `internal/shopping/`, `internal/claude/anthropic.go` | prompt, Claude client, validation + retry, Plans/Lists services, list builder |
+| `internal/web/`, `web/` | templ pages, htmx partials, SSE, service worker, offline tick queue |
+| `deploy/` | Dockerfile, compose, backups, `make deploy` |
 
-**Frozen** means: a package that needs a change there (a new query, a new
-interface method, a schema column) stops and asks for it rather than editing
-it on its branch. New migrations are new files (`00002_...sql`), never edits
-to `00001_init.sql`.
+The packages were first built in parallel with some of them frozen; that is
+over. A change now goes in this order: migration, queries, domain and service
+interfaces, `make generate`, then services, web and tests. New migrations are
+new files (`00003_...sql`), never edits to an applied one.
 
 ## Conventions
 
@@ -69,8 +77,20 @@ to `00001_init.sql`.
   `domain.ValidationError{Problems: ...}` for input problems. Map `pgx.ErrNoRows`
   to `domain.ErrNotFound` in services. HTTP code comes from `httpx.Status`.
 - IDs are UUIDs (`github.com/google/uuid`). Days are lowercase English
-  (`domain.Weekday`). Section keys match `^[a-z][a-z0-9_]{0,39}$`;
-  `domain.PantryCheckSection` ("pantry_check") is always the last list section.
+  (`domain.Weekday`); a meal's day is only a suggestion and may be empty.
+  Section keys match `^[a-z][a-z0-9_]{0,39}$`.
+- Meals have a `meal_type` (breakfast, lunch, dinner, baking, other). The
+  profile's `meal_targets` sets how many of each a week holds; a plan must
+  match them exactly.
+- The avoid list is the `avoid_items` table (unique per household on
+  `normalized_name`), not a profile column.
+- Pantry ingredients become list items with `check_home = true` in their real
+  section, shown under "Check at home" at the top of the list. `have_it`
+  true hides the item from shopping, false (Buy) shows it in its section.
+  Progress counts only items to buy. `domain.PantryCheckSection` is only the
+  name of that group, never a stored section.
+- Quantities: buying units and counted things are whole (`math.Ceil`);
+  "need X" only when it differs from what is bought. Water is never listed.
 - Tokens (session, API, invite): random 32 bytes, base64url to the client,
   only `sha256` stored (`token_hash`).
 - Shopping-list writes publish `events.Event` to `Deps.Events` after commit.
@@ -79,18 +99,20 @@ to `00001_init.sql`.
   removed with `DeleteStaleGeneratedListItems`; manual items are never touched.
 - Claude returns meals only (schema: `internal/domain/meal_plan.schema.json`,
   structs `domain.MealPlanJSON`). The server builds the list. Validate:
-  schema, `one_pot` when the profile requires it, no avoid-list ingredient,
-  baby-portion step before salt/stock/cheese. Retry once with the problems
+  schema, meal count per type equals `meal_targets`, `one_pot` when the
+  profile requires it (not for baking), no avoid-list ingredient,
+  baby-portion step before salt/stock/cheese (not for baking). Retry once with the problems
   named, then fail. Log usage with `InsertUsage` (kind `plan`, `swap`, `retry`).
 - Tests: `testutil.NewDB(t)` gives each test its own migrated database
   (cloned from a template, fast, safe with `t.Parallel()`).
   `testutil.NewHousehold(t, pool, name)` returns an admin `Scope`.
 - `log/slog` JSON logs. No secrets or prompts with personal data at Info.
 
-## Not in the spec but added in package 0
+## Not in the original spec
 
 - `sessions` table (web login), `GET /api/meals/{meal_id}` (recipe screen via API).
 - `Plans.Meal` and `Feedback.SaveRecipe/Recipes` service methods.
+- `make e2e`: Playwright against `internal/web/e2eserver` (fake services).
 
 ## Don't build yet
 

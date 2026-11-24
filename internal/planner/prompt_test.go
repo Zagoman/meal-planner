@@ -10,7 +10,7 @@ import (
 
 func profile() domain.Profile {
 	return domain.Profile{
-		DinnersPerWeek: 4, Servings: 3, SpiceLevel: domain.SpiceMild, OnePot: true,
+		MealTargets: map[domain.MealType]int{domain.MealBreakfast: 7, domain.MealLunch: 2, domain.MealDinner: 4, domain.MealBaking: 1}, People: 3, SpiceLevel: domain.SpiceMild, OnePot: true,
 		ProteinMix:   map[domain.Protein]int{domain.ProteinFish: 1, domain.ProteinChicken: 2, domain.ProteinVegetarian: 1},
 		Avoid:        []string{"mushrooms", "coriander"},
 		Shop:         "Netto",
@@ -31,7 +31,7 @@ func TestBuildPlanPrompt(t *testing.T) {
 		Request: "Something with pumpkin please",
 	})
 	for _, want := range []string{
-		"Servings per meal: 3",
+		"People eating: 3",
 		"Spice level: mild",
 		"One-pot meals only: yes",
 		"Baby portions: yes",
@@ -43,7 +43,7 @@ func TestBuildPlanPrompt(t *testing.T) {
 		"- bakery (Bakery)",
 		`"Fish tacos" (fish): 5/5 - "kids loved it"`,
 		`"Lentil soup" (vegetarian): 1/5`,
-		"Plan 4 dinners",
+		"7 breakfasts, 2 lunches, 4 dinners and 1 baking. Exactly that many",
 		"<request>\nSomething with pumpkin please\n</request>",
 	} {
 		if !strings.Contains(got, want) {
@@ -57,7 +57,7 @@ func TestBuildPlanPrompt(t *testing.T) {
 
 func TestBuildPlanPromptMinimal(t *testing.T) {
 	t.Parallel()
-	got := BuildPlanPrompt(PromptInput{Profile: domain.Profile{DinnersPerWeek: 3, Servings: 2, Language: "en"}})
+	got := BuildPlanPrompt(PromptInput{Profile: domain.Profile{MealTargets: map[domain.MealType]int{domain.MealDinner: 3}, People: 2, Language: "en"}})
 	if strings.Contains(got, "Ratings") || strings.Contains(got, "avoid list") || strings.Contains(got, "language") {
 		t.Errorf("empty sections leaked into prompt:\n%s", got)
 	}
@@ -85,9 +85,9 @@ func TestBuildSwapAndRetryPrompt(t *testing.T) {
 	t.Parallel()
 	got := BuildSwapPrompt(SwapInput{
 		PromptInput: PromptInput{Profile: profile(), Sections: domain.DefaultSections, Request: "faster"},
-		Day:         domain.Wednesday, Current: "Fish pie", OtherMeals: []string{"Chicken curry", "Dal"},
+		MealType:    domain.MealDinner, Day: domain.Wednesday, Current: "Fish pie", OtherMeals: []string{"Chicken curry", "Dal"},
 	})
-	for _, want := range []string{"exactly one meal, for wednesday", `replaces "Fish pie"`, `"Chicken curry", "Dal"`, "faster"} {
+	for _, want := range []string{"exactly one dinner with day wednesday", `replaces "Fish pie"`, `"Chicken curry", "Dal"`, "faster"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("swap prompt is missing %q\n%s", want, got)
 		}

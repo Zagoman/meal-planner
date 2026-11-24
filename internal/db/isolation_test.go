@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/Zagoman/meal-planner/internal/db"
 	"github.com/Zagoman/meal-planner/internal/testutil"
@@ -28,8 +29,8 @@ func TestCompositeKeysBlockCrossHouseholdRows(t *testing.T) {
 	}
 
 	_, err = q.CreateMeal(ctx, db.CreateMealParams{
-		HouseholdID: b.HouseholdID, PlanID: planA.ID, Day: "monday",
-		Title: "intruder", Protein: "fish", Minutes: 10, OnePot: true, Servings: 2,
+		HouseholdID: b.HouseholdID, PlanID: planA.ID, Day: pgtype.Text{String: "monday", Valid: true},
+		MealType: "dinner", AddedFrom: "claude", Title: "intruder", Protein: "fish", Minutes: 10, OnePot: true, Servings: 2,
 	})
 	if err == nil {
 		t.Fatal("household B attached a meal to household A's plan")

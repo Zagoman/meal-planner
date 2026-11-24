@@ -18,18 +18,19 @@ UPDATE plans SET status = 'active' WHERE id = $1 AND household_id = $2 AND statu
 DELETE FROM plans WHERE id = $1 AND household_id = $2 AND status = 'draft';
 
 -- name: CreateMeal :one
-INSERT INTO meals (household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;
+INSERT INTO meals (household_id, plan_id, day, meal_type, position, title, protein, minutes, one_pot, servings,
+                   after_baby_portion, recipe_id, added_from)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *;
 
 -- name: GetMeal :one
 SELECT * FROM meals WHERE id = $1 AND household_id = $2;
 
--- name: GetMealByDay :one
-SELECT * FROM meals WHERE plan_id = $1 AND household_id = $2 AND day = $3;
-
 -- name: ListMeals :many
+-- Suggested day (meals without one last), then meal type, then position.
 SELECT * FROM meals WHERE plan_id = $1 AND household_id = $2
-ORDER BY array_position(ARRAY['monday','tuesday','wednesday','thursday','friday','saturday','sunday'], day);
+ORDER BY array_position(ARRAY['monday','tuesday','wednesday','thursday','friday','saturday','sunday'], day) NULLS LAST,
+         array_position(ARRAY['breakfast','lunch','dinner','baking','other'], meal_type),
+         position, created_at;
 
 -- name: DeleteMeal :exec
 DELETE FROM meals WHERE id = $1 AND household_id = $2;
@@ -45,7 +46,7 @@ SELECT * FROM ingredients WHERE meal_id = $1 AND household_id = $2 ORDER BY posi
 SELECT i.* FROM ingredients i
 JOIN meals m ON m.id = i.meal_id AND m.household_id = i.household_id
 WHERE m.plan_id = $1 AND i.household_id = $2
-ORDER BY m.day, i.position;
+ORDER BY m.position, m.created_at, i.position;
 
 -- name: UpdateIngredient :execrows
 UPDATE ingredients SET name = $3, normalized_name = $4, qty = $5, unit = $6, section = $7

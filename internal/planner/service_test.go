@@ -35,8 +35,9 @@ func meal(day domain.Weekday, title string, ings []domain.IngredientJSON, steps 
 	if len(steps) == 0 {
 		steps = []domain.StepJSON{step("Cook everything together.")}
 	}
+	d := day
 	return domain.MealJSON{
-		Day: day, Title: title, Protein: domain.ProteinChicken, Minutes: 30, OnePot: true, Servings: 2,
+		MealType: domain.MealDinner, Day: &d, Title: title, Protein: domain.ProteinChicken, Minutes: 30, OnePot: true, Servings: 2,
 		Ingredients: ings, Steps: steps, AfterBabyPortion: []string{},
 	}
 }
@@ -80,7 +81,22 @@ func newEnv(t *testing.T, replies ...claude.FakeReply) *env {
 	e.lists = shopping.New(pool, e.hub)
 	e.a = testutil.NewHousehold(t, pool, "A")
 	e.b = testutil.NewHousehold(t, pool, "B")
+	// weekA is two dinners
+	for _, s := range []domain.Scope{e.a, e.b} {
+		e.setProfile(t, s, func(p *db.UpdateProfileParams) { p.MealTargets = []byte(`{"dinner": 2}`) })
+	}
 	return e
+}
+
+func (e *env) setAvoid(t *testing.T, s domain.Scope, names ...string) {
+	t.Helper()
+	for _, n := range names {
+		if _, err := db.New(e.pool).InsertAvoidItem(context.Background(), db.InsertAvoidItemParams{
+			HouseholdID: s.HouseholdID, Name: n, NormalizedName: shopping.Normalize(n), Source: "profile",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func (e *env) setProfile(t *testing.T, s domain.Scope, f func(*db.UpdateProfileParams)) {
@@ -91,9 +107,10 @@ func (e *env) setProfile(t *testing.T, s domain.Scope, f func(*db.UpdateProfileP
 		t.Fatal(err)
 	}
 	params := db.UpdateProfileParams{
-		HouseholdID: s.HouseholdID, DinnersPerWeek: p.DinnersPerWeek, Servings: p.Servings,
-		SpiceLevel: p.SpiceLevel, OnePot: p.OnePot, ProteinMix: p.ProteinMix, Avoid: p.Avoid,
+		HouseholdID: s.HouseholdID, MealTargets: p.MealTargets, People: p.People,
+		SpiceLevel: p.SpiceLevel, OnePot: p.OnePot, ProteinMix: p.ProteinMix,
 		Shop: p.Shop, ShoppingDay: p.ShoppingDay, BabyPortions: p.BabyPortions, Language: p.Language,
+		AutoConfirmTime: p.AutoConfirmTime,
 	}
 	f(&params)
 	if _, err := q.UpdateProfile(context.Background(), params); err != nil {
@@ -164,7 +181,7 @@ func TestGenerateSuccess(t *testing.T) {
 		t.Errorf("week start %v is not a Monday", plan.WeekStart)
 	}
 	m := plan.Meals[0]
-	if m.Day != domain.Monday || len(m.Ingredients) != 2 || m.Ingredients[0].NormalizedName != "onion" || len(m.Steps) != 1 {
+	if m.Day != domain.Monday || m.MealType != domain.MealDinner || len(m.Ingredients) != 2 || m.Ingredients[0].NormalizedName != "onion" || len(m.Steps) != 1 {
 		t.Errorf("monday meal: %+v", m)
 	}
 
@@ -217,7 +234,7 @@ func TestGenerateRetriesOnceWithProblems(t *testing.T) {
 		ing("chestnut mushrooms", 250, "g", "produce"),
 	}))
 	e := newEnv(t, bad, weekA(t))
-	e.setProfile(t, e.a, func(p *db.UpdateProfileParams) { p.Avoid = []string{"mushrooms"} })
+	e.setAvoid(t, e.a, "mushrooms")
 
 	plan, err := e.plans.Generate(ctx, e.a, "")
 	if err != nil {
@@ -271,7 +288,7 @@ func TestGenerateAvoidListTwiceFails(t *testing.T) {
 	t.Parallel()
 	bad := reply(t, meal(domain.Monday, "Pork stir fry", []domain.IngredientJSON{ing("pork belly", 400, "g", "meat_fish")}))
 	e := newEnv(t, bad, bad)
-	e.setProfile(t, e.a, func(p *db.UpdateProfileParams) { p.Avoid = []string{"Pork"} })
+	e.setAvoid(t, e.a, "Pork")
 	_, err := e.plans.Generate(context.Background(), e.a, "")
 	if !errors.Is(err, domain.ErrGeneration) || !strings.Contains(err.Error(), "avoid list") {
 		t.Fatalf("got %v", err)
@@ -290,7 +307,10 @@ func TestGenerateBabyPortionOrdering(t *testing.T) {
 	right := reply(t, meal(domain.Monday, "Pasta", ings,
 		step("Boil the pasta."), babyStep(), step("Stir in the parmesan and salt.")))
 	e := newEnv(t, wrong, right)
-	e.setProfile(t, e.a, func(p *db.UpdateProfileParams) { p.BabyPortions = true })
+	e.setProfile(t, e.a, func(p *db.UpdateProfileParams) {
+		p.BabyPortions = true
+		p.MealTargets = []byte(`{"dinner": 1}`)
+	})
 
 	plan, err := e.plans.Generate(ctx, e.a, "")
 	if err != nil {
@@ -449,7 +469,7 @@ func TestSubstitute(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	e := newEnv(t, weekA(t))
-	e.setProfile(t, e.a, func(p *db.UpdateProfileParams) { p.Avoid = []string{"pork"} })
+	e.setAvoid(t, e.a, "pork")
 	plan, err := e.plans.Generate(ctx, e.a, "")
 	if err != nil {
 		t.Fatal(err)
@@ -533,5 +553,90 @@ func TestCrossHouseholdAccessIsNotFound(t *testing.T) {
 	list, _ = e.lists.Active(ctx, e.a)
 	if a := items(list)["Onions"]; a.Checked || a.ID != itemA.ID {
 		t.Errorf("A's item changed: %+v", a)
+	}
+}
+
+// Window 1 "done when": a week of breakfasts, lunches, dinners and baking
+// gives a list with Check at home at the top and whole buying units, and an
+// avoided ingredient never gets into a saved plan.
+func TestGenerateMealTypesListAndAvoid(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	typed := func(mt domain.MealType, day *domain.Weekday, title string, ings ...domain.IngredientJSON) domain.MealJSON {
+		m := meal(domain.Monday, title, ings)
+		m.MealType, m.Day = mt, day
+		return m
+	}
+	mon, tue := domain.Monday, domain.Tuesday
+	week := func(dinnerIng domain.IngredientJSON) claude.FakeReply {
+		return reply(t,
+			typed(domain.MealBreakfast, &mon, "Porridge", ing("oats", 120, "g", "dry_goods"), ing("milk", 3, "dl", "dairy_eggs"), ing("water", 2, "dl", "other")),
+			typed(domain.MealLunch, &tue, "Egg sandwich", ing("eggs", 4, "pcs", "dairy_eggs"), ing("lemon", 0.5, "pcs", "produce")),
+			typed(domain.MealDinner, &mon, "Onion stew", ing("onion", 0.5, "pcs", "produce"), dinnerIng, ing("salt", 0, "", "spices")),
+			typed(domain.MealBaking, nil, "Rye bread", ing("rye flour", 500, "g", "dry_goods"), ing("lukewarm water", 4, "dl", "other")),
+		)
+	}
+	e := newEnv(t, week(ing("mushrooms", 250, "g", "produce")), week(ing("carrots", 2, "pcs", "produce")))
+	e.setProfile(t, e.a, func(p *db.UpdateProfileParams) {
+		p.MealTargets = []byte(`{"breakfast": 1, "lunch": 1, "dinner": 1, "baking": 1}`)
+	})
+	e.setAvoid(t, e.a, "Mushroom")
+	if err := db.New(e.pool).InsertPantryItem(ctx, db.InsertPantryItemParams{
+		HouseholdID: e.a.HouseholdID, Name: "Salt", NormalizedName: "salt",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := e.plans.Generate(ctx, e.a, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The first answer used the avoided ingredient: it was sent back.
+	if len(e.fake.Requests) != 2 || !strings.Contains(e.fake.Requests[1].Messages[2].Content, "on the avoid list") {
+		t.Fatalf("avoid list not enforced: %d requests", len(e.fake.Requests))
+	}
+	if !strings.Contains(e.fake.Requests[0].Messages[0].Content, "1 breakfast, 1 lunch, 1 dinner and 1 baking") {
+		t.Errorf("prompt lacks the meal targets:\n%s", e.fake.Requests[0].Messages[0].Content)
+	}
+	types := map[domain.MealType]int{}
+	for _, m := range plan.Meals {
+		types[m.MealType]++
+		for _, in := range m.Ingredients {
+			if strings.Contains(in.NormalizedName, "mushroom") {
+				t.Errorf("avoided ingredient saved: %+v", in)
+			}
+			if in.NormalizedName == "water" || strings.HasSuffix(in.NormalizedName, " water") {
+				t.Errorf("water saved as an ingredient: %+v", in)
+			}
+		}
+	}
+	if len(types) != 4 {
+		t.Errorf("meal types %v", types)
+	}
+
+	list, err := e.lists.Active(ctx, e.a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.CheckHome) != 1 || list.CheckHome[0].Name != "Salt" {
+		t.Errorf("check at home: %+v", list.CheckHome)
+	}
+	got := map[string]string{}
+	for _, s := range list.Sections {
+		for _, it := range s.Items {
+			got[it.Name] = it.QtyText + "|" + it.NeedText
+		}
+	}
+	for name, want := range map[string]string{
+		"Onions": "1 net|need 0.5", "Lemon": "1|", "Eggs": "1 box (6)|need 4", "Milk": "1 carton (1 l)|need 300 ml",
+	} {
+		if got[name] != want {
+			t.Errorf("%s: got %q, want %q (list %v)", name, got[name], want, got)
+		}
+	}
+	for name := range got {
+		if strings.Contains(strings.ToLower(name), "water") || name == "Salt" {
+			t.Errorf("%s should not be in a shop section", name)
+		}
 	}
 }

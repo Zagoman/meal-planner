@@ -1,15 +1,21 @@
-/* Meal Planner styles (package C). Mobile first, light + dark. */
+/* Meal Planner styles. Mobile first (390 px design width), light + dark.
+   Light values are the design tokens from the dev handoff. */
 :root {
-  --bg: #fbfaf7; --card: #ffffff; --fg: #1d2420; --muted: #5f6863; --accent: #2f6f4f; --accent-fg: #ffffff;
-  --line: #e3e0d8; --error: #a33a2a; --error-bg: #fbeae6; --ok-bg: #e6f3ec; --baby: #8a5a00; --baby-bg: #fff2d6;
-  --radius: 12px;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bg: #ffffff; --card: #ffffff; --fg: #1c1c1c; --muted: #5f5f5b; --accent: #2f6b4f; --accent-fg: #ffffff;
+  --accent-soft: #e8f1ec; --accent-soft-fg: #1f4a36; --surface-muted: #f2f2f0;
+  --line: #d9d9d6; --error: #a33a2a; --error-bg: #fbeae6; --ok-bg: #e8f1ec; --baby: #1f4a36; --baby-bg: #e8f1ec;
+  --warn: #b45309; --warn-soft: #fdf1e7; --draft-bg: #fff3d6; --draft-fg: #6b4a00;
+  --radius: 12px; --radius-control: 10px;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #151917; --card: #1d2320; --fg: #e9ece9; --muted: #9aa39e; --accent: #7cc39e; --accent-fg: #0d1a13;
-    --line: #2b322e; --error: #f0a091; --error-bg: #3a1f1a; --ok-bg: #1b3326; --baby: #f5c66a; --baby-bg: #3a2d10;
+    --line: #2b322e; --error: #f0a091; --error-bg: #3a1f1a; --ok-bg: #1b3326; --baby: #a8dcbf; --baby-bg: #1b3326;
+    --accent-soft: #1b3326; --accent-soft-fg: #a8dcbf; --surface-muted: #232a26;
+    --warn: #f0b27a; --warn-soft: #3a2a1a; --draft-bg: #3a2d10; --draft-fg: #f5d58a;
   }
 }
 * { box-sizing: border-box; }
@@ -18,7 +24,7 @@ body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.4; pad
 a { color: var(--accent); }
 h2 { font-size: 1.1rem; margin: 0 0 .5rem; }
 .top { padding: 1rem 1rem 0; display: flex; align-items: center; gap: .5rem; max-width: 40rem; margin: 0 auto; }
-.top h1 { margin: 0; font-size: 1.4rem; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.top h1 { margin: 0; font-size: 24px; font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; }
 main { padding: 1rem; max-width: 40rem; margin: 0 auto; }
 .muted { color: var(--muted); }
 .small { font-size: .875rem; }
@@ -30,8 +36,7 @@ main { padding: 1rem; max-width: 40rem; margin: 0 auto; }
   background: var(--bg); border-top: 1px solid var(--line);
   padding: .25rem 0 calc(.25rem + env(safe-area-inset-bottom));
 }
-.tabs a { color: var(--muted); text-decoration: none; padding: .35rem .75rem; display: flex; flex-direction: column; align-items: center; font-size: .8rem; min-width: 4rem; }
-.tabs a span { font-size: 1.25rem; }
+.tabs a { color: var(--muted); text-decoration: none; padding: .35rem .5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 12px; min-width: 4rem; min-height: 56px; flex: 1; }
 .tabs a[aria-current="page"] { color: var(--accent); font-weight: 600; }
 
 /* Controls */
@@ -75,11 +80,28 @@ fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0; padding
 .flash.error { background: var(--error-bg); color: var(--error); }
 .flash.ok { background: var(--ok-bg); }
 
+/* Section label: 12 px caps */
+.sec-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 4px .35rem; }
+button.primary { border-radius: var(--radius-control); min-height: 48px; font-weight: 600; }
+
 /* Shopping list */
-.progress { margin: 0 0 .5rem; }
-.sec { margin-bottom: 1.25rem; }
-.sec h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: .25rem; }
-.sec.pantry h2 { color: var(--baby); }
+.progress { margin: 0 0 1rem; display: grid; gap: .35rem; }
+.progress-text { margin: 0; font-size: 14px; font-weight: 600; }
+.bar { height: 6px; background: var(--surface-muted); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); }
+.sec { margin-bottom: 1rem; }
+.check-home { margin-bottom: 1rem; }
+.home-card { background: var(--surface-muted); padding: 0; }
+.home-card > p { margin: 0; padding: .65rem 14px .25rem; color: var(--muted); }
+.home-card .items { border: 0; background: transparent; }
+.home-row { display: flex; align-items: center; gap: 12px; padding: 6px 14px; min-height: 52px; border-top: 1px solid var(--line); }
+.home-row:first-child { border-top: 0; }
+.home-row .name { flex: 1; }
+.seg { display: flex; border: 1.5px solid var(--line); border-radius: var(--radius-control); overflow: hidden; background: var(--card); }
+.seg-form { display: contents; }
+.seg .sb { min-height: 44px; padding: 0 12px; border-radius: 0; background: transparent; color: var(--fg); font-size: 13px; }
+.seg .seg-form + .seg-form .sb { border-left: 1px solid var(--line); }
+.seg .sb-on { background: var(--accent-soft); color: var(--accent-soft-fg); font-weight: 600; }
 .items { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
 .item { display: flex; align-items: stretch; border-top: 1px solid var(--line); }
 .item:first-child { border-top: 0; }
@@ -96,8 +118,14 @@ fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0; padding
 .item.checked { opacity: .6; }
 .item.pending .box { outline: 2px dashed var(--muted); outline-offset: 2px; }
 .item .del { background: none; color: var(--muted); border-radius: 0; font-size: 1.3rem; padding: 0 1rem; }
-form.add { display: grid; grid-template-columns: 1fr; gap: .5rem; position: sticky; bottom: calc(4.25rem + env(safe-area-inset-bottom)); }
-@media (min-width: 30rem) { form.add { grid-template-columns: 1fr 10rem auto; } }
+form.add { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+form.add button { border-radius: var(--radius-control); }
+/* The list's add bar sits above the tab bar, on one row like the wireframe. */
+form.add-item {
+  grid-template-columns: 1fr 6.5rem auto; position: sticky; bottom: calc(3.5rem + env(safe-area-inset-bottom));
+  background: var(--bg); padding: 10px 0; border-top: 1.5px solid var(--line); margin-top: .5rem;
+}
+form.add-item select { padding-inline: .4rem; }
 
 /* Week */
 .generate { display: grid; gap: .6rem; }
@@ -109,10 +137,16 @@ form.add { display: grid; grid-template-columns: 1fr; gap: .5rem; position: stic
 .spinner { width: 1.1rem; height: 1.1rem; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
-.meal header { display: flex; flex-direction: column; }
-.meal .day { font-size: .8rem; text-transform: uppercase; color: var(--muted); letter-spacing: .04em; }
-.meal h2 { margin: 0; }
-.meal h2 a { color: var(--fg); text-decoration: none; }
+.sub { margin: -.25rem 0 1rem; }
+.meals { display: grid; gap: 8px; margin-bottom: .75rem; }
+.meals .card { margin: 0; }
+.meal { padding: 0; }
+.meal-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; min-height: 56px; color: var(--fg); text-decoration: none; }
+.meal-text { display: grid; gap: 2px; }
+.meal-title { font-weight: 600; }
+.meal-go { color: var(--accent); font-size: 14px; flex: none; }
+.meal .swap { padding: 0 14px 6px; border-top: 1px solid var(--line); }
+.generate-box { padding: .25rem 1rem; }
 .meta { color: var(--muted); margin: .25rem 0 .5rem; }
 .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .actions details { flex: 1 1 100%; }
@@ -166,6 +200,12 @@ body.cooking .tabs { display: none; }
 .sections li:first-child { border-top: 0; }
 .sections .name { flex: 1; }
 .sections form { display: flex; gap: .35rem; }
+
+/* Avoid list chips */
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 2px; background: var(--accent-soft); color: var(--accent-soft-fg); border-radius: 999px; padding-left: 12px; }
+.chip form { display: contents; }
+.chip button.icon { border: 0; color: inherit; min-height: 40px; }
 
 /* Household */
 p.ok { margin: .75rem 0 0; background: var(--ok-bg); border-radius: 8px; padding: .5rem .75rem; }

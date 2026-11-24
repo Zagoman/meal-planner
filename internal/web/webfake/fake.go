@@ -23,6 +23,7 @@ import (
 	"github.com/Zagoman/meal-planner/internal/domain"
 	"github.com/Zagoman/meal-planner/internal/events"
 	"github.com/Zagoman/meal-planner/internal/service"
+	"github.com/Zagoman/meal-planner/internal/shopping"
 )
 
 // Store implements service.Auth, Households, Profiles, Plans, Lists and
@@ -60,6 +61,7 @@ type household struct {
 	profile  domain.Profile
 	sections []domain.Section
 	pantry   []domain.PantryItem
+	avoid    []domain.AvoidItem
 	plan     *domain.Plan // active plan, nil if none
 	meals    map[uuid.UUID]domain.Meal
 	items    []domain.ListItem
@@ -104,9 +106,10 @@ func (s *Store) AddHousehold(name string) uuid.UUID {
 	h := &household{
 		Household: domain.Household{ID: uuid.New(), Name: name, CreatedAt: time.Now()},
 		profile: domain.Profile{
-			DinnersPerWeek: 5, Servings: 2, SpiceLevel: domain.SpiceMild,
+			MealTargets: map[domain.MealType]int{domain.MealBreakfast: 0, domain.MealLunch: 0, domain.MealDinner: 5, domain.MealBaking: 0},
+			People:      2, SpiceLevel: domain.SpiceMild,
 			ProteinMix: map[domain.Protein]int{domain.ProteinChicken: 2, domain.ProteinFish: 1, domain.ProteinVegetarian: 2},
-			Avoid:      []string{}, ShoppingDay: domain.Saturday, Language: "en",
+			Avoid:      []string{}, ShoppingDay: domain.Saturday, AutoConfirmTime: "08:00", Language: "en",
 		},
 		sections: slices.Clone(domain.DefaultSections),
 		meals:    map[uuid.UUID]domain.Meal{},
@@ -416,7 +419,16 @@ func (s *Store) Get(_ context.Context, sc domain.Scope) (domain.Profile, error) 
 	if err != nil {
 		return domain.Profile{}, err
 	}
-	return h.profile, nil
+	return h.profileWithAvoid(), nil
+}
+
+func (h *household) profileWithAvoid() domain.Profile {
+	p := h.profile
+	p.Avoid = make([]string, len(h.avoid))
+	for i, a := range h.avoid {
+		p.Avoid[i] = a.Name
+	}
+	return p
 }
 
 func (s *Store) Put(_ context.Context, sc domain.Scope, p domain.Profile) (domain.Profile, error) {
@@ -427,11 +439,16 @@ func (s *Store) Put(_ context.Context, sc domain.Scope, p domain.Profile) (domai
 		return domain.Profile{}, err
 	}
 	var problems []string
-	if p.DinnersPerWeek < 1 || p.DinnersPerWeek > 7 {
-		problems = append(problems, "dinners_per_week: must be 1 to 7")
+	if p.TotalMeals() < 1 {
+		problems = append(problems, "meal_targets: at least one meal a week")
 	}
-	if p.Servings < 1 || p.Servings > 12 {
-		problems = append(problems, "servings: must be 1 to 12")
+	for t, n := range p.MealTargets {
+		if n < 0 || n > domain.MaxMealsPerType {
+			problems = append(problems, fmt.Sprintf("meal_targets.%s: 0 to 14", t))
+		}
+	}
+	if p.People < 1 || p.People > 12 {
+		problems = append(problems, "people: must be 1 to 12")
 	}
 	if p.ShoppingDay != "" && !p.ShoppingDay.Valid() {
 		problems = append(problems, "shopping_day: not a weekday")
@@ -439,8 +456,68 @@ func (s *Store) Put(_ context.Context, sc domain.Scope, p domain.Profile) (domai
 	if len(problems) > 0 {
 		return domain.Profile{}, &domain.ValidationError{Problems: problems}
 	}
+	if p.Avoid != nil {
+		h.avoid = nil
+		for _, name := range p.Avoid {
+			h.addAvoid(name, domain.AvoidFromProfile)
+		}
+	}
+	if p.AutoConfirmTime == "" {
+		p.AutoConfirmTime = "08:00"
+	}
 	h.profile = p
-	return p, nil
+	return h.profileWithAvoid(), nil
+}
+
+func (h *household) addAvoid(name string, source domain.AvoidSource) domain.AvoidItem {
+	name = strings.TrimSpace(name)
+	key := shopping.Normalize(name)
+	for _, a := range h.avoid {
+		if a.NormalizedName == key {
+			return a
+		}
+	}
+	a := domain.AvoidItem{ID: uuid.New(), Name: name, NormalizedName: key, Source: source, AddedAt: time.Now()}
+	h.avoid = append(h.avoid, a)
+	return a
+}
+
+func (s *Store) AvoidItems(_ context.Context, sc domain.Scope) ([]domain.AvoidItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h, err := s.hh(sc)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(h.avoid), nil
+}
+
+func (s *Store) AddAvoid(_ context.Context, sc domain.Scope, name string, source domain.AvoidSource) (domain.AvoidItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h, err := s.hh(sc)
+	if err != nil {
+		return domain.AvoidItem{}, err
+	}
+	if normalize(name) == "" {
+		return domain.AvoidItem{}, &domain.ValidationError{Problems: []string{"name is required"}}
+	}
+	return h.addAvoid(name, source), nil
+}
+
+func (s *Store) DeleteAvoid(_ context.Context, sc domain.Scope, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h, err := s.hh(sc)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(h.avoid, func(a domain.AvoidItem) bool { return a.ID == id })
+	if i < 0 {
+		return fmt.Errorf("delete avoid: %w", domain.ErrNotFound)
+	}
+	h.avoid = slices.Delete(h.avoid, i, i+1)
+	return nil
 }
 
 func (s *Store) Sections(_ context.Context, sc domain.Scope) ([]domain.Section, error) {
@@ -537,7 +614,7 @@ func (s *Store) Generate(ctx context.Context, sc domain.Scope, prompt string) (d
 		return domain.Plan{}, err
 	}
 	p := domain.Plan{ID: uuid.New(), WeekStart: weekStart(time.Now()), Status: domain.PlanActive, Prompt: prompt, CreatedAt: time.Now()}
-	n := max(1, min(7, h.profile.DinnersPerWeek))
+	n := max(1, min(7, h.profile.MealTargets[domain.MealDinner]))
 	for i := range n {
 		m := h.nextMeal(domain.Weekdays[i], nil)
 		p.Meals = append(p.Meals, m)
@@ -564,11 +641,11 @@ func (h *household) nextMeal(day domain.Weekday, exclude map[string]bool) domain
 		if exclude[r.Title] {
 			continue
 		}
-		m := r.instantiate(day, h.profile.Servings)
+		m := r.instantiate(day, h.profile.People)
 		h.meals[m.ID] = m
 		return m
 	}
-	m := recipes[0].instantiate(day, h.profile.Servings)
+	m := recipes[0].instantiate(day, h.profile.People)
 	h.meals[m.ID] = m
 	return m
 }
@@ -672,11 +749,7 @@ func (h *household) rebuild(newPlan bool) {
 			key := ing.NormalizedName
 			a, ok := byName[key]
 			if !ok {
-				sec := ing.Section
-				if pantry[key] {
-					sec = domain.PantryCheckSection
-				}
-				a = &agg{item: domain.ListItem{Name: key, Section: sec, PlanID: h.plan.ID}, qty: map[string]float64{}}
+				a = &agg{item: domain.ListItem{Name: key, Section: ing.Section, PlanID: h.plan.ID, CheckHome: pantry[key]}, qty: map[string]float64{}}
 				byName[key] = a
 				order = append(order, key)
 			}
@@ -694,7 +767,7 @@ func (h *household) rebuild(newPlan bool) {
 		it := a.item
 		it.NeedText = "need " + strings.Join(parts, " + ")
 		if prev, ok := old[key]; ok && !newPlan {
-			it.ID, it.Checked, it.CheckedBy = prev.ID, prev.Checked, prev.CheckedBy
+			it.ID, it.Checked, it.CheckedBy, it.HaveIt = prev.ID, prev.Checked, prev.CheckedBy, prev.HaveIt
 		} else {
 			it.ID = uuid.New()
 		}
@@ -704,32 +777,7 @@ func (h *household) rebuild(newPlan bool) {
 }
 
 func (s *Store) list(h *household) domain.List {
-	l := domain.List{PlanID: h.plan.ID}
-	bySec := map[string][]domain.ListItem{}
-	for _, it := range h.items {
-		bySec[it.Section] = append(bySec[it.Section], it)
-	}
-	for _, sec := range h.sections {
-		if items := bySec[sec.Key]; len(items) > 0 {
-			l.Sections = append(l.Sections, domain.ListSection{Key: sec.Key, Name: sec.Name, Items: items})
-			delete(bySec, sec.Key)
-		}
-	}
-	pantry := bySec[domain.PantryCheckSection]
-	delete(bySec, domain.PantryCheckSection)
-	// Unknown sections (removed from the profile) go before the pantry check.
-	keys := make([]string, 0, len(bySec))
-	for k := range bySec {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		l.Sections = append(l.Sections, domain.ListSection{Key: k, Name: k, Items: bySec[k]})
-	}
-	if len(pantry) > 0 {
-		l.Sections = append(l.Sections, domain.ListSection{Key: domain.PantryCheckSection, Name: "Check the pantry", Items: pantry})
-	}
-	return l
+	return shopping.Group(h.plan.ID, h.items, h.sections)
 }
 
 func (s *Store) Active(_ context.Context, sc domain.Scope) (domain.List, error) {
@@ -806,6 +854,29 @@ func (s *Store) SetChecked(_ context.Context, sc domain.Scope, itemID uuid.UUID,
 	if checked {
 		by := sc.MemberID
 		h.items[i].CheckedBy = &by
+	}
+	it := h.items[i]
+	s.mu.Unlock()
+	s.publish(sc.HouseholdID, events.Event{Kind: events.ItemChanged, ItemID: itemID})
+	return it, nil
+}
+
+func (s *Store) SetHaveIt(_ context.Context, sc domain.Scope, itemID uuid.UUID, haveIt *bool) (domain.ListItem, error) {
+	s.mu.Lock()
+	h, err := s.hh(sc)
+	if err != nil {
+		s.mu.Unlock()
+		return domain.ListItem{}, err
+	}
+	i := slices.IndexFunc(h.items, func(it domain.ListItem) bool { return it.ID == itemID && it.CheckHome })
+	if i < 0 {
+		s.mu.Unlock()
+		return domain.ListItem{}, fmt.Errorf("have it: %w", domain.ErrNotFound)
+	}
+	h.items[i].HaveIt = nil
+	if haveIt != nil {
+		v := *haveIt
+		h.items[i].HaveIt = &v
 	}
 	it := h.items[i]
 	s.mu.Unlock()

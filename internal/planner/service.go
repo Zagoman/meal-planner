@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Zagoman/meal-planner/internal/claude"
@@ -62,7 +63,7 @@ func New(pool *pgxpool.Pool, client claude.Client, hub *events.Hub, opts Options
 		opts.Timeout = 55 * time.Second
 	}
 	if opts.MaxTokens <= 0 {
-		opts.MaxTokens = 16000
+		opts.MaxTokens = 32000 // a full week of four meal types is long
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -94,7 +95,10 @@ func (s *Service) Generate(ctx context.Context, sc domain.Scope, prompt string) 
 		return domain.Plan{}, err
 	}
 	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt}
-	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildPlanPrompt(in), hh.rules(""), kindPlan)
+	if hh.profile.TotalMeals() == 0 {
+		return domain.Plan{}, &domain.ValidationError{Problems: []string{"the profile plans no meals; set at least one meal per week"}}
+	}
+	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildPlanPrompt(in), hh.rules(nil), kindPlan)
 	if err != nil {
 		return domain.Plan{}, err
 	}
@@ -147,8 +151,9 @@ func (s *Service) Meal(ctx context.Context, sc domain.Scope, mealID uuid.UUID) (
 	return loadMeal(ctx, q, m)
 }
 
-// SwapMeal replaces (or fills) one day of the active plan. The list is
-// rebuilt with upserts, so ticks on items still needed and manual items stay.
+// SwapMeal replaces (or fills) the dinner suggested for one day of the
+// active plan. The list is rebuilt with upserts, so ticks on items still
+// needed and manual items stay. (Window 2 swaps any meal by its ID.)
 func (s *Service) SwapMeal(ctx context.Context, sc domain.Scope, planID uuid.UUID, day domain.Weekday, prompt string) (domain.Meal, error) {
 	if !day.Valid() {
 		return domain.Meal{}, &domain.ValidationError{Problems: []string{fmt.Sprintf("unknown day %q", day)}}
@@ -177,7 +182,7 @@ func (s *Service) SwapMeal(ctx context.Context, sc domain.Scope, planID uuid.UUI
 	var old *db.Meal
 	var others []string
 	for i := range meals {
-		if meals[i].Day == string(day) {
+		if old == nil && meals[i].MealType == string(domain.MealDinner) && meals[i].Day.String == string(day) {
 			old = &meals[i]
 		} else {
 			others = append(others, meals[i].Title)
@@ -189,12 +194,13 @@ func (s *Service) SwapMeal(ctx context.Context, sc domain.Scope, planID uuid.UUI
 	}
 	in := SwapInput{
 		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt},
-		Day:         day, OtherMeals: others,
+		MealType:    domain.MealDinner, Day: day, OtherMeals: others,
 	}
 	if old != nil {
 		in.Current = old.Title
 	}
-	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildSwapPrompt(in), hh.rules(day), kindSwap)
+	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildSwapPrompt(in),
+		hh.rules(&SwapRule{MealType: domain.MealDinner, Day: day}), kindSwap)
 	if err != nil {
 		return domain.Meal{}, err
 	}
@@ -207,8 +213,12 @@ func (s *Service) SwapMeal(ctx context.Context, sc domain.Scope, planID uuid.UUI
 				return fmt.Errorf("delete meal: %w", err)
 			}
 		}
+		pos := len(meals)
+		if old != nil {
+			pos = int(old.Position)
+		}
 		var err error
-		if created, err = insertMeal(ctx, qt, sc.HouseholdID, planID, mp.Meals[0]); err != nil {
+		if created, err = insertMeal(ctx, qt, sc.HouseholdID, planID, pos, mp.Meals[0]); err != nil {
 			return err
 		}
 		return shopping.RebuildItems(ctx, qt, sc.HouseholdID, planID)
@@ -367,8 +377,8 @@ func (s *Service) saveDraft(ctx context.Context, sc domain.Scope, prompt string,
 		if err != nil {
 			return fmt.Errorf("create plan: %w", err)
 		}
-		for _, m := range mp.Meals {
-			if _, err := insertMeal(ctx, qt, sc.HouseholdID, draft.ID, m); err != nil {
+		for i, m := range mp.Meals {
+			if _, err := insertMeal(ctx, qt, sc.HouseholdID, draft.ID, i, m); err != nil {
 				return err
 			}
 		}
@@ -377,20 +387,28 @@ func (s *Service) saveDraft(ctx context.Context, sc domain.Scope, prompt string,
 	return draft, err
 }
 
-func insertMeal(ctx context.Context, q *db.Queries, householdID, planID uuid.UUID, m domain.MealJSON) (db.Meal, error) {
+func insertMeal(ctx context.Context, q *db.Queries, householdID, planID uuid.UUID, position int, m domain.MealJSON) (db.Meal, error) {
 	after := m.AfterBabyPortion
 	if after == nil {
 		after = []string{}
 	}
+	var day pgtype.Text
+	if m.Day != nil {
+		day = pgtype.Text{String: string(*m.Day), Valid: true}
+	}
 	meal, err := q.CreateMeal(ctx, db.CreateMealParams{
-		HouseholdID: householdID, PlanID: planID, Day: string(m.Day), Title: m.Title,
+		HouseholdID: householdID, PlanID: planID, Day: day, MealType: string(m.MealType),
+		Position: clamp32(position), Title: m.Title,
 		Protein: string(m.Protein), Minutes: clamp32(m.Minutes), OnePot: m.OnePot,
-		Servings: clamp32(m.Servings), AfterBabyPortion: after,
+		Servings: clamp32(m.Servings), AfterBabyPortion: after, AddedFrom: string(domain.FromClaude),
 	})
 	if err != nil {
 		return db.Meal{}, fmt.Errorf("create meal: %w", err)
 	}
 	for i, ing := range m.Ingredients {
+		if shopping.IsWater(ing.NormalizedName) || shopping.IsWater(ing.Name) {
+			continue // water is never bought
+		}
 		norm := shopping.Normalize(ing.NormalizedName)
 		if norm == "" {
 			norm = shopping.Normalize(ing.Name)
@@ -451,7 +469,8 @@ func loadMeal(ctx context.Context, q *db.Queries, r db.Meal) (domain.Meal, error
 		return domain.Meal{}, fmt.Errorf("list steps: %w", err)
 	}
 	m := domain.Meal{
-		ID: r.ID, Day: domain.Weekday(r.Day), Title: r.Title, Protein: domain.Protein(r.Protein),
+		ID: r.ID, MealType: domain.MealType(r.MealType), Day: domain.Weekday(r.Day.String),
+		AddedFrom: domain.MealSource(r.AddedFrom), Title: r.Title, Protein: domain.Protein(r.Protein),
 		Minutes: int(r.Minutes), OnePot: r.OnePot, Servings: int(r.Servings),
 		Ingredients: make([]domain.Ingredient, len(ings)), Steps: make([]domain.Step, len(steps)),
 		AfterBabyPortion: r.AfterBabyPortion,
@@ -479,12 +498,12 @@ type household struct {
 	feedback []FeedbackLine
 }
 
-func (h household) rules(day domain.Weekday) Rules {
+func (h household) rules(swap *SwapRule) Rules {
 	keys := make([]string, len(h.sections))
 	for i, s := range h.sections {
 		keys[i] = s.Key
 	}
-	return Rules{Profile: h.profile, SectionKeys: keys, Day: day}
+	return Rules{Profile: h.profile, SectionKeys: keys, Swap: swap}
 }
 
 func (s *Service) loadHousehold(ctx context.Context, q *db.Queries, householdID uuid.UUID) (household, error) {
@@ -494,6 +513,14 @@ func (s *Service) loadHousehold(ctx context.Context, q *db.Queries, householdID 
 		return h, notFound("profile", err)
 	}
 	h.profile = ProfileFromDB(pr)
+	avoid, err := q.ListAvoidItems(ctx, householdID)
+	if err != nil {
+		return h, fmt.Errorf("list avoid items: %w", err)
+	}
+	h.profile.Avoid = make([]string, len(avoid))
+	for i, a := range avoid {
+		h.profile.Avoid[i] = a.Name
+	}
 	secs, err := q.ListSections(ctx, householdID)
 	if err != nil {
 		return h, fmt.Errorf("list sections: %w", err)
@@ -515,17 +542,32 @@ func (s *Service) loadHousehold(ctx context.Context, q *db.Queries, householdID 
 	return h, nil
 }
 
-// ProfileFromDB converts a stored profile.
+// ProfileFromDB converts a stored profile. The avoid list is a separate
+// table (ListAvoidItems), so Avoid is left empty.
 func ProfileFromDB(p db.Profile) domain.Profile {
 	out := domain.Profile{
-		DinnersPerWeek: int(p.DinnersPerWeek), Servings: int(p.Servings),
-		SpiceLevel: domain.SpiceLevel(p.SpiceLevel), OnePot: p.OnePot, Avoid: p.Avoid, Shop: p.Shop,
-		ShoppingDay: domain.Weekday(p.ShoppingDay), BabyPortions: p.BabyPortions, Language: p.Language,
+		People:     int(p.People),
+		SpiceLevel: domain.SpiceLevel(p.SpiceLevel), OnePot: p.OnePot, Avoid: []string{}, Shop: p.Shop,
+		ShoppingDay: domain.Weekday(p.ShoppingDay), AutoConfirmTime: ClockText(p.AutoConfirmTime),
+		BabyPortions: p.BabyPortions, Language: p.Language,
 	}
 	if len(p.ProteinMix) > 0 {
 		_ = json.Unmarshal(p.ProteinMix, &out.ProteinMix) // malformed mix is ignored, not fatal
 	}
+	out.MealTargets = map[domain.MealType]int{}
+	if len(p.MealTargets) > 0 {
+		_ = json.Unmarshal(p.MealTargets, &out.MealTargets) // malformed targets are ignored, not fatal
+	}
 	return out
+}
+
+// ClockText renders a stored time of day as "08:00".
+func ClockText(t pgtype.Time) string {
+	if !t.Valid {
+		return "08:00"
+	}
+	m := t.Microseconds / 60_000_000
+	return fmt.Sprintf("%02d:%02d", m/60, m%60)
 }
 
 // WeekStart is the Monday a new plan is for: today if it is Monday,

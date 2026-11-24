@@ -27,11 +27,11 @@ import (
 // only one that contains the marker; every later call gets a plain meal, so
 // B's own new plan can never look like a leak.
 const (
-	markerReply = `{"meals":[{"day":"monday","title":"Marker stew","protein":"fish","minutes":30,"one_pot":true,"servings":2,
+	markerReply = `{"meals":[{"meal_type":"dinner","day":"monday","title":"Marker stew","protein":"fish","minutes":30,"one_pot":true,"servings":2,
 		"ingredients":[{"name":"Marker onions","normalized_name":"marker onion","qty":2,"unit":"pcs","section":"a_marker"},
 		               {"name":"cream","normalized_name":"cream","qty":200,"unit":"ml","section":"other"}],
 		"steps":[{"text":"Cook the marker stew.","timer_min":20,"baby_portion":false}],"after_baby_portion":[]}]}`
-	plainReply = `{"meals":[{"day":"monday","title":"Plain stew","protein":"vegetarian","minutes":25,"one_pot":true,"servings":2,
+	plainReply = `{"meals":[{"meal_type":"dinner","day":"monday","title":"Plain stew","protein":"vegetarian","minutes":25,"one_pot":true,"servings":2,
 		"ingredients":[{"name":"rice","normalized_name":"rice","qty":200,"unit":"g","section":"other"},
 		               {"name":"cream","normalized_name":"cream","qty":100,"unit":"ml","section":"other"}],
 		"steps":[{"text":"Cook it.","timer_min":null,"baby_portion":false}],"after_baby_portion":[]}]}`
@@ -75,6 +75,15 @@ func newRealEnv(t *testing.T) *realEnv {
 	e.handler = r
 	e.a = e.newParty(testutil.NewHousehold(t, pool, "Amarker"))
 	e.b = e.newParty(testutil.NewHousehold(t, pool, "Bee"))
+	// The scripted replies are one dinner each.
+	pb, err := e.hh.Get(context.Background(), e.b.scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb.MealTargets = map[domain.MealType]int{domain.MealDinner: 1}
+	if _, err := e.hh.Put(context.Background(), e.b.scope, pb); err != nil {
+		t.Fatal(err)
+	}
 	re.seedA()
 	return re
 }
@@ -88,6 +97,7 @@ func (re *realEnv) seedA() {
 	}
 	p.Shop = "Amarker shop"
 	p.Avoid = []string{"marker nuts"}
+	p.MealTargets = map[domain.MealType]int{domain.MealDinner: 1}
 	if _, err := re.hh.Put(ctx, sc, p); err != nil {
 		t.Fatal(err)
 	}

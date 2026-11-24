@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "e2e-server",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", "./internal/web/e2eserver"],
+      "port": 8090,
+      "url": "http://127.0.0.1:8090"
+    }
+  ]
+}

@@ -134,12 +134,17 @@ func TestPagesRender(t *testing.T) {
 		session string
 		wants   []string
 	}{
-		{"/", anna, []string{`sse-connect="/list/stream"`, `sse-swap="list"`, f.seed.FirstHomeItem.Name,
-			"Check the pantry", `name="section"`, `aria-current="page"`}},
-		{"/week", anna, []string{"Make a new plan", meal.Title, `hx-post="/week/swap"`, `name="rating"`, `hx-indicator="#gen-progress"`}},
+		{"/list", anna, []string{`sse-connect="/list/stream"`, `sse-swap="list"`, f.seed.FirstHomeItem.Name,
+			`id="progress"`, `id="check-home"`, "Check at home", ">Have it<", ">Buy<", `name="section"`,
+			`aria-current="page"`, `href="/recipes"`}},
+		{"/", anna, []string{`sse-connect="/list/stream"`, `id="progress"`}},
+		{"/week", anna, []string{"Make a new plan", meal.Title, `id="week-meals"`, `id="meal-` + meal.ID.String() + `"`,
+			"Dinner · ", "cook them in any order", `hx-post="/week/swap"`, `hx-indicator="#gen-progress"`}},
+		{"/recipes", anna, []string{"Recipes", `aria-current="page"`}},
 		{"/meals/" + meal.ID.String(), anna, []string{meal.Title, "Baby portion", "after baby portion",
 			`data-timer-min="8"`, "data-cook-open", `id="cook"`}},
-		{"/profile", anna, []string{"Shop sections", "Move Bakery up", `name="dinners_per_week"`, "rice"}},
+		{"/profile", anna, []string{"Shop sections", "Move Bakery up", `name="meals_dinner"`, `name="people"`,
+			`name="auto_confirm_time"`, `id="avoid-list"`, `href="/household"`, "rice"}},
 		{"/household", anna, []string{"Home", "Ben", "Invite someone", "Switch", "API tokens", `action="/logout"`}},
 		{"/logout", anna, []string{`action="/logout"`}},
 		{"/login", "", []string{`action="/login"`, `name="password"`}},
@@ -199,7 +204,7 @@ func TestTickReturnsItemPartial(t *testing.T) {
 
 	// Without JavaScript: redirect back to the list.
 	rec = f.do(t, req{method: "POST", path: path, form: url.Values{"checked": {"false"}}, session: anna})
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/list" {
 		t.Errorf("plain post: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 	rec = f.do(t, req{method: "POST", path: path, form: url.Values{"checked": {"maybe"}}, session: anna, hx: true})
@@ -350,7 +355,7 @@ func TestWeekGenerateSwapRate(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("swap: %d %s", rec.Code, rec.Body)
 	}
-	mustContain(t, "swap", rec.Body.String(), `<article class="meal card" id="meal-monday">`)
+	mustContain(t, "swap", rec.Body.String(), `<article class="meal card" id="meal-`, "suggested Mon")
 	if strings.Contains(rec.Body.String(), p.Meals[0].Title) {
 		t.Error("swap returned the same meal")
 	}
@@ -376,25 +381,50 @@ func TestProfileForms(t *testing.T) {
 	f := newFixture(t)
 	anna := f.session(f.seed.Anna)
 	form := url.Values{
-		"dinners_per_week": {"4"}, "servings": {"3"}, "spice_level": {"medium"}, "one_pot": {"on"},
-		"avoid": {"mushrooms\ncoriander"}, "shop": {"Netto"}, "shopping_day": {"friday"}, "language": {"da"},
+		"meals_breakfast": {"7"}, "meals_lunch": {"0"}, "meals_dinner": {"4"}, "meals_baking": {"1"},
+		"people": {"3"}, "spice_level": {"medium"}, "one_pot": {"on"},
+		"shop": {"Netto"}, "shopping_day": {"friday"}, "auto_confirm_time": {"07:30"}, "language": {"da"},
 		"protein_fish": {"2"}, "protein_vegetarian": {"2"},
 	}
 	rec := f.do(t, req{method: "POST", path: "/profile", form: form, session: anna, hx: true})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("save: %d %s", rec.Code, rec.Body)
 	}
-	mustContain(t, "save", rec.Body.String(), "Saved ✓", "mushrooms\ncoriander")
+	mustContain(t, "save", rec.Body.String(), "Saved ✓", `name="meals_breakfast"`, `value="07:30"`)
 	p, _ := f.store.Get(context.Background(), f.seed.Anna)
-	if p.DinnersPerWeek != 4 || !p.OnePot || p.ShoppingDay != domain.Friday || len(p.Avoid) != 2 || p.ProteinMix[domain.ProteinFish] != 2 || p.BabyPortions {
+	if p.MealTargets[domain.MealBreakfast] != 7 || p.MealTargets[domain.MealDinner] != 4 || p.People != 3 || !p.OnePot ||
+		p.ShoppingDay != domain.Friday || p.AutoConfirmTime != "07:30" || p.ProteinMix[domain.ProteinFish] != 2 || p.BabyPortions {
 		t.Errorf("profile: %+v", p)
 	}
-	form.Set("dinners_per_week", "9")
+	form.Set("people", "0")
 	rec = f.do(t, req{method: "POST", path: "/profile", form: form, session: anna, hx: true})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("invalid: %d", rec.Code)
 	}
-	mustContain(t, "invalid", rec.Body.String(), "dinners_per_week: must be 1 to 7")
+	mustContain(t, "invalid", rec.Body.String(), "people: must be 1 to 12")
+
+	// Avoid list: add, add again (no duplicate), remove; B cannot remove A's.
+	for _, name := range []string{"Mushrooms", "mushroom"} {
+		rec = f.do(t, req{method: "POST", path: "/profile/avoid", form: url.Values{"name": {name}}, session: anna, hx: true})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("add avoid: %d %s", rec.Code, rec.Body)
+		}
+	}
+	mustContain(t, "avoid", rec.Body.String(), `id="avoid-list"`, "Mushrooms")
+	items, _ := f.store.AvoidItems(context.Background(), f.seed.Anna)
+	if len(items) != 1 {
+		t.Fatalf("avoid items: %+v", items)
+	}
+	carl := f.session(f.seed.Carl)
+	if rec = f.do(t, req{method: "DELETE", path: "/profile/avoid/" + items[0].ID.String(), session: carl, hx: true}); rec.Code != http.StatusNotFound {
+		t.Errorf("other household deletes avoid item: %d", rec.Code)
+	}
+	if rec = f.do(t, req{method: "DELETE", path: "/profile/avoid/" + items[0].ID.String(), session: anna, hx: true}); rec.Code != http.StatusOK {
+		t.Errorf("delete avoid: %d %s", rec.Code, rec.Body)
+	}
+	if items, _ = f.store.AvoidItems(context.Background(), f.seed.Anna); len(items) != 0 {
+		t.Errorf("avoid not removed: %+v", items)
+	}
 
 	rec = f.do(t, req{method: "POST", path: "/profile/sections/move", form: url.Values{"key": {"bakery"}, "dir": {"up"}}, session: anna, hx: true})
 	if rec.Code != http.StatusOK {
@@ -708,4 +738,74 @@ func TestChangePassword(t *testing.T) {
 		form: url.Values{"current_password": {"a new password"}, "new_password": {"pwned pwned"}, "confirm_password": {"pwned pwned"}}}); rec.Code != http.StatusForbidden {
 		t.Errorf("cross-origin change: %d", rec.Code)
 	}
+}
+
+func TestCheckAtHome(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	anna, carl := f.session(f.seed.Anna), f.session(f.seed.Carl)
+	l, _ := f.store.Active(context.Background(), f.seed.Anna)
+	if len(l.CheckHome) == 0 {
+		t.Fatal("seed has no Check at home items")
+	}
+	home := l.CheckHome[0]
+	path := "/list/items/" + home.ID.String() + "/home"
+	inSection := func() bool {
+		l, _ := f.store.Active(context.Background(), f.seed.Anna)
+		for _, s := range l.Sections {
+			for _, it := range s.Items {
+				if it.ID == home.ID {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if inSection() {
+		t.Fatal("unanswered pantry item is on the shopping part of the list")
+	}
+
+	// Buy: the item joins its section, and the answer shows as selected.
+	rec := f.do(t, req{method: "POST", path: path, form: url.Values{"have_it": {"false"}}, session: anna, hx: true})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("buy: %d %s", rec.Code, rec.Body)
+	}
+	mustContain(t, "buy", rec.Body.String(), `id="check-home"`, "1 of ", `class="sb sb-on" aria-pressed="true">Buy`)
+	if !inSection() {
+		t.Error("Buy did not move the item into its section")
+	}
+	// Have it hides it again; an empty answer clears it.
+	for _, v := range []string{"true", ""} {
+		if rec = f.do(t, req{method: "POST", path: path, form: url.Values{"have_it": {v}}, session: anna, hx: true}); rec.Code != http.StatusOK {
+			t.Fatalf("have_it=%q: %d", v, rec.Code)
+		}
+		if inSection() {
+			t.Errorf("have_it=%q: item still in a section", v)
+		}
+	}
+	// Without JavaScript: redirect to the list.
+	if rec = f.do(t, req{method: "POST", path: path, form: url.Values{"have_it": {"true"}}, session: anna}); rec.Code != http.StatusSeeOther {
+		t.Errorf("plain post: %d", rec.Code)
+	}
+	if rec = f.do(t, req{method: "POST", path: path, form: url.Values{"have_it": {"maybe"}}, session: anna, hx: true}); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("bad value: %d", rec.Code)
+	}
+	// Another household: 404, and nothing changes.
+	if rec = f.do(t, req{method: "POST", path: path, form: url.Values{"have_it": {"false"}}, session: carl, hx: true}); rec.Code != http.StatusNotFound {
+		t.Errorf("other household: %d", rec.Code)
+	}
+	if inSection() {
+		t.Error("other household changed the answer")
+	}
+	// A normal item cannot be answered.
+	item := f.seed.FirstHomeItem
+	if rec = f.do(t, req{method: "POST", path: "/list/items/" + item.ID.String() + "/home", form: url.Values{"have_it": {"true"}}, session: anna, hx: true}); rec.Code != http.StatusNotFound {
+		t.Errorf("normal item: %d", rec.Code)
+	}
+	// /toggle is the tick route.
+	rec = f.do(t, req{method: "POST", path: "/list/items/" + item.ID.String() + "/toggle", form: url.Values{"checked": {"true"}}, session: anna, hx: true})
+	if rec.Code != http.StatusOK {
+		t.Errorf("toggle: %d", rec.Code)
+	}
+	mustContain(t, "toggle", rec.Body.String(), `hx-post="/list/items/`+item.ID.String()+`/toggle"`)
 }

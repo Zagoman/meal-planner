@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createProfile = `-- name: CreateProfile :exec
@@ -17,6 +18,38 @@ INSERT INTO profiles (household_id) VALUES ($1) ON CONFLICT DO NOTHING
 
 func (q *Queries) CreateProfile(ctx context.Context, householdID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, createProfile, householdID)
+	return err
+}
+
+const deleteAvoidItem = `-- name: DeleteAvoidItem :execrows
+DELETE FROM avoid_items WHERE id = $1 AND household_id = $2
+`
+
+type DeleteAvoidItemParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) DeleteAvoidItem(ctx context.Context, arg DeleteAvoidItemParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAvoidItem, arg.ID, arg.HouseholdID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteAvoidItemsNotIn = `-- name: DeleteAvoidItemsNotIn :exec
+DELETE FROM avoid_items
+WHERE household_id = $1 AND NOT (normalized_name = ANY($2::text[]))
+`
+
+type DeleteAvoidItemsNotInParams struct {
+	HouseholdID uuid.UUID
+	Keep        []string
+}
+
+func (q *Queries) DeleteAvoidItemsNotIn(ctx context.Context, arg DeleteAvoidItemsNotInParams) error {
+	_, err := q.db.Exec(ctx, deleteAvoidItemsNotIn, arg.HouseholdID, arg.Keep)
 	return err
 }
 
@@ -39,7 +72,7 @@ func (q *Queries) DeleteSections(ctx context.Context, householdID uuid.UUID) err
 }
 
 const getProfile = `-- name: GetProfile :one
-SELECT household_id, dinners_per_week, servings, spice_level, one_pot, protein_mix, avoid, shop, shopping_day, baby_portions, language, updated_at FROM profiles WHERE household_id = $1
+SELECT household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time FROM profiles WHERE household_id = $1
 `
 
 func (q *Queries) GetProfile(ctx context.Context, householdID uuid.UUID) (Profile, error) {
@@ -47,17 +80,54 @@ func (q *Queries) GetProfile(ctx context.Context, householdID uuid.UUID) (Profil
 	var i Profile
 	err := row.Scan(
 		&i.HouseholdID,
-		&i.DinnersPerWeek,
-		&i.Servings,
+		&i.People,
 		&i.SpiceLevel,
 		&i.OnePot,
 		&i.ProteinMix,
-		&i.Avoid,
 		&i.Shop,
 		&i.ShoppingDay,
 		&i.BabyPortions,
 		&i.Language,
 		&i.UpdatedAt,
+		&i.MealTargets,
+		&i.AutoConfirmTime,
+	)
+	return i, err
+}
+
+const insertAvoidItem = `-- name: InsertAvoidItem :one
+INSERT INTO avoid_items (household_id, name, normalized_name, added_by, source)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (household_id, normalized_name) DO NOTHING
+RETURNING id, household_id, name, normalized_name, added_by, added_at, source
+`
+
+type InsertAvoidItemParams struct {
+	HouseholdID    uuid.UUID
+	Name           string
+	NormalizedName string
+	AddedBy        uuid.NullUUID
+	Source         string
+}
+
+// Adding a name that is already on the list returns nothing (pgx.ErrNoRows).
+func (q *Queries) InsertAvoidItem(ctx context.Context, arg InsertAvoidItemParams) (AvoidItem, error) {
+	row := q.db.QueryRow(ctx, insertAvoidItem,
+		arg.HouseholdID,
+		arg.Name,
+		arg.NormalizedName,
+		arg.AddedBy,
+		arg.Source,
+	)
+	var i AvoidItem
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.Name,
+		&i.NormalizedName,
+		&i.AddedBy,
+		&i.AddedAt,
+		&i.Source,
 	)
 	return i, err
 }
@@ -97,6 +167,38 @@ func (q *Queries) InsertSection(ctx context.Context, arg InsertSectionParams) er
 		arg.SortOrder,
 	)
 	return err
+}
+
+const listAvoidItems = `-- name: ListAvoidItems :many
+SELECT id, household_id, name, normalized_name, added_by, added_at, source FROM avoid_items WHERE household_id = $1 ORDER BY lower(name)
+`
+
+func (q *Queries) ListAvoidItems(ctx context.Context, householdID uuid.UUID) ([]AvoidItem, error) {
+	rows, err := q.db.Query(ctx, listAvoidItems, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AvoidItem{}
+	for rows.Next() {
+		var i AvoidItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.HouseholdID,
+			&i.Name,
+			&i.NormalizedName,
+			&i.AddedBy,
+			&i.AddedAt,
+			&i.Source,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPantryItems = `-- name: ListPantryItems :many
@@ -160,63 +262,63 @@ func (q *Queries) ListSections(ctx context.Context, householdID uuid.UUID) ([]St
 
 const updateProfile = `-- name: UpdateProfile :one
 UPDATE profiles SET
-    dinners_per_week = $2,
-    servings         = $3,
-    spice_level      = $4,
-    one_pot          = $5,
-    protein_mix      = $6,
-    avoid            = $7,
-    shop             = $8,
-    shopping_day     = $9,
-    baby_portions    = $10,
-    language         = $11,
-    updated_at       = now()
+    meal_targets      = $2,
+    people            = $3,
+    spice_level       = $4,
+    one_pot           = $5,
+    protein_mix       = $6,
+    shop              = $7,
+    shopping_day      = $8,
+    baby_portions     = $9,
+    language          = $10,
+    auto_confirm_time = $11,
+    updated_at        = now()
 WHERE household_id = $1
-RETURNING household_id, dinners_per_week, servings, spice_level, one_pot, protein_mix, avoid, shop, shopping_day, baby_portions, language, updated_at
+RETURNING household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time
 `
 
 type UpdateProfileParams struct {
-	HouseholdID    uuid.UUID
-	DinnersPerWeek int32
-	Servings       int32
-	SpiceLevel     string
-	OnePot         bool
-	ProteinMix     []byte
-	Avoid          []string
-	Shop           string
-	ShoppingDay    string
-	BabyPortions   bool
-	Language       string
+	HouseholdID     uuid.UUID
+	MealTargets     []byte
+	People          int32
+	SpiceLevel      string
+	OnePot          bool
+	ProteinMix      []byte
+	Shop            string
+	ShoppingDay     string
+	BabyPortions    bool
+	Language        string
+	AutoConfirmTime pgtype.Time
 }
 
 func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error) {
 	row := q.db.QueryRow(ctx, updateProfile,
 		arg.HouseholdID,
-		arg.DinnersPerWeek,
-		arg.Servings,
+		arg.MealTargets,
+		arg.People,
 		arg.SpiceLevel,
 		arg.OnePot,
 		arg.ProteinMix,
-		arg.Avoid,
 		arg.Shop,
 		arg.ShoppingDay,
 		arg.BabyPortions,
 		arg.Language,
+		arg.AutoConfirmTime,
 	)
 	var i Profile
 	err := row.Scan(
 		&i.HouseholdID,
-		&i.DinnersPerWeek,
-		&i.Servings,
+		&i.People,
 		&i.SpiceLevel,
 		&i.OnePot,
 		&i.ProteinMix,
-		&i.Avoid,
 		&i.Shop,
 		&i.ShoppingDay,
 		&i.BabyPortions,
 		&i.Language,
 		&i.UpdatedAt,
+		&i.MealTargets,
+		&i.AutoConfirmTime,
 	)
 	return i, err
 }

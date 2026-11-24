@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const activatePlan = `-- name: ActivatePlan :execrows
@@ -69,20 +70,25 @@ func (q *Queries) CreateIngredient(ctx context.Context, arg CreateIngredientPara
 }
 
 const createMeal = `-- name: CreateMeal :one
-INSERT INTO meals (household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion, created_at
+INSERT INTO meals (household_id, plan_id, day, meal_type, position, title, protein, minutes, one_pot, servings,
+                   after_baby_portion, recipe_id, added_from)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id, household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion, created_at, meal_type, position, recipe_id, added_from
 `
 
 type CreateMealParams struct {
 	HouseholdID      uuid.UUID
 	PlanID           uuid.UUID
-	Day              string
+	Day              pgtype.Text
+	MealType         string
+	Position         int32
 	Title            string
 	Protein          string
 	Minutes          int32
 	OnePot           bool
 	Servings         int32
 	AfterBabyPortion []string
+	RecipeID         uuid.NullUUID
+	AddedFrom        string
 }
 
 func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error) {
@@ -90,12 +96,16 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		arg.HouseholdID,
 		arg.PlanID,
 		arg.Day,
+		arg.MealType,
+		arg.Position,
 		arg.Title,
 		arg.Protein,
 		arg.Minutes,
 		arg.OnePot,
 		arg.Servings,
 		arg.AfterBabyPortion,
+		arg.RecipeID,
+		arg.AddedFrom,
 	)
 	var i Meal
 	err := row.Scan(
@@ -110,6 +120,10 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 		&i.Servings,
 		&i.AfterBabyPortion,
 		&i.CreatedAt,
+		&i.MealType,
+		&i.Position,
+		&i.RecipeID,
+		&i.AddedFrom,
 	)
 	return i, err
 }
@@ -220,7 +234,7 @@ func (q *Queries) GetActivePlan(ctx context.Context, householdID uuid.UUID) (Pla
 }
 
 const getMeal = `-- name: GetMeal :one
-SELECT id, household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion, created_at FROM meals WHERE id = $1 AND household_id = $2
+SELECT id, household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion, created_at, meal_type, position, recipe_id, added_from FROM meals WHERE id = $1 AND household_id = $2
 `
 
 type GetMealParams struct {
@@ -243,35 +257,10 @@ func (q *Queries) GetMeal(ctx context.Context, arg GetMealParams) (Meal, error) 
 		&i.Servings,
 		&i.AfterBabyPortion,
 		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const getMealByDay = `-- name: GetMealByDay :one
-SELECT id, household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion, created_at FROM meals WHERE plan_id = $1 AND household_id = $2 AND day = $3
-`
-
-type GetMealByDayParams struct {
-	PlanID      uuid.UUID
-	HouseholdID uuid.UUID
-	Day         string
-}
-
-func (q *Queries) GetMealByDay(ctx context.Context, arg GetMealByDayParams) (Meal, error) {
-	row := q.db.QueryRow(ctx, getMealByDay, arg.PlanID, arg.HouseholdID, arg.Day)
-	var i Meal
-	err := row.Scan(
-		&i.ID,
-		&i.HouseholdID,
-		&i.PlanID,
-		&i.Day,
-		&i.Title,
-		&i.Protein,
-		&i.Minutes,
-		&i.OnePot,
-		&i.Servings,
-		&i.AfterBabyPortion,
-		&i.CreatedAt,
+		&i.MealType,
+		&i.Position,
+		&i.RecipeID,
+		&i.AddedFrom,
 	)
 	return i, err
 }
@@ -343,7 +332,7 @@ const listIngredientsForPlan = `-- name: ListIngredientsForPlan :many
 SELECT i.id, i.household_id, i.meal_id, i.position, i.name, i.normalized_name, i.qty, i.unit, i.section FROM ingredients i
 JOIN meals m ON m.id = i.meal_id AND m.household_id = i.household_id
 WHERE m.plan_id = $1 AND i.household_id = $2
-ORDER BY m.day, i.position
+ORDER BY m.position, m.created_at, i.position
 `
 
 type ListIngredientsForPlanParams struct {
@@ -382,8 +371,10 @@ func (q *Queries) ListIngredientsForPlan(ctx context.Context, arg ListIngredient
 }
 
 const listMeals = `-- name: ListMeals :many
-SELECT id, household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion, created_at FROM meals WHERE plan_id = $1 AND household_id = $2
-ORDER BY array_position(ARRAY['monday','tuesday','wednesday','thursday','friday','saturday','sunday'], day)
+SELECT id, household_id, plan_id, day, title, protein, minutes, one_pot, servings, after_baby_portion, created_at, meal_type, position, recipe_id, added_from FROM meals WHERE plan_id = $1 AND household_id = $2
+ORDER BY array_position(ARRAY['monday','tuesday','wednesday','thursday','friday','saturday','sunday'], day) NULLS LAST,
+         array_position(ARRAY['breakfast','lunch','dinner','baking','other'], meal_type),
+         position, created_at
 `
 
 type ListMealsParams struct {
@@ -391,6 +382,7 @@ type ListMealsParams struct {
 	HouseholdID uuid.UUID
 }
 
+// Suggested day (meals without one last), then meal type, then position.
 func (q *Queries) ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error) {
 	rows, err := q.db.Query(ctx, listMeals, arg.PlanID, arg.HouseholdID)
 	if err != nil {
@@ -412,6 +404,10 @@ func (q *Queries) ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, e
 			&i.Servings,
 			&i.AfterBabyPortion,
 			&i.CreatedAt,
+			&i.MealType,
+			&i.Position,
+			&i.RecipeID,
+			&i.AddedFrom,
 		); err != nil {
 			return nil, err
 		}

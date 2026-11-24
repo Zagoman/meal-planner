@@ -26,7 +26,46 @@ func (h *handlers) profilePage(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, http.StatusOK, ProfilePage(p, sections, pantry))
+	avoid, err := h.svc.Profiles.AvoidItems(r.Context(), s)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, http.StatusOK, ProfilePage(p, avoid, sections, pantry))
+}
+
+func (h *handlers) addAvoid(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.svc.Profiles.AddAvoid(r.Context(), scope(r), r.PostFormValue("name"), domain.AvoidFromProfile); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.renderAvoid(w, r)
+}
+
+func (h *handlers) deleteAvoid(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if err := h.svc.Profiles.DeleteAvoid(r.Context(), scope(r), id); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.renderAvoid(w, r)
+}
+
+func (h *handlers) renderAvoid(w http.ResponseWriter, r *http.Request) {
+	if !isHX(r) {
+		redirect(w, r, "/profile")
+		return
+	}
+	items, err := h.svc.Profiles.AvoidItems(r.Context(), scope(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, http.StatusOK, AvoidList(items))
 }
 
 // lines splits a textarea on newlines and commas, dropping blanks.
@@ -61,17 +100,21 @@ func parseProfile(r *http.Request) (domain.Profile, error) {
 		}
 		return n
 	}
+	// Avoid stays nil: the avoid list has its own form.
 	p := domain.Profile{
-		DinnersPerWeek: num("dinners_per_week"),
-		Servings:       num("servings"),
-		SpiceLevel:     domain.SpiceLevel(r.PostFormValue("spice_level")),
-		OnePot:         r.PostFormValue("one_pot") == "on",
-		BabyPortions:   r.PostFormValue("baby_portions") == "on",
-		Avoid:          lines(r.PostFormValue("avoid")),
-		Shop:           strings.TrimSpace(r.PostFormValue("shop")),
-		ShoppingDay:    domain.Weekday(r.PostFormValue("shopping_day")),
-		Language:       strings.TrimSpace(r.PostFormValue("language")),
-		ProteinMix:     map[domain.Protein]int{},
+		MealTargets:     map[domain.MealType]int{},
+		People:          num("people"),
+		SpiceLevel:      domain.SpiceLevel(r.PostFormValue("spice_level")),
+		OnePot:          r.PostFormValue("one_pot") == "on",
+		BabyPortions:    r.PostFormValue("baby_portions") == "on",
+		Shop:            strings.TrimSpace(r.PostFormValue("shop")),
+		ShoppingDay:     domain.Weekday(r.PostFormValue("shopping_day")),
+		AutoConfirmTime: strings.TrimSpace(r.PostFormValue("auto_confirm_time")),
+		Language:        strings.TrimSpace(r.PostFormValue("language")),
+		ProteinMix:      map[domain.Protein]int{},
+	}
+	for _, t := range domain.PlannedMealTypes {
+		p.MealTargets[t] = num("meals_" + string(t))
 	}
 	for _, pr := range proteins {
 		if n := num("protein_" + string(pr)); n > 0 {
@@ -158,4 +201,13 @@ func (h *handlers) savePantry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.render(w, r, http.StatusOK, PantryForm(items, true))
+}
+
+func (h *handlers) recipesPage(w http.ResponseWriter, r *http.Request) {
+	recipes, err := h.svc.Feedback.Recipes(r.Context(), scope(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, http.StatusOK, RecipesPage(recipes))
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Zagoman/meal-planner/internal/db"
@@ -102,6 +103,7 @@ func (s *Service) AddItem(ctx context.Context, sc domain.Scope, name, section st
 	row, err := q.AddManualListItem(ctx, db.AddManualListItemParams{
 		HouseholdID: sc.HouseholdID, PlanID: plan.ID, Name: name,
 		NormalizedName: Normalize(name), Section: section,
+		AddedBy: uuid.NullUUID{UUID: sc.MemberID, Valid: sc.MemberID != uuid.Nil},
 	})
 	if err != nil {
 		return domain.ListItem{}, fmt.Errorf("add list item: %w", err)
@@ -121,6 +123,23 @@ func (s *Service) SetChecked(ctx context.Context, sc domain.Scope, itemID uuid.U
 	})
 	if err != nil {
 		return domain.ListItem{}, notFound("list item", err)
+	}
+	item := ItemFromDB(row)
+	s.publish(sc.HouseholdID, events.Event{Kind: events.ItemChanged, ItemID: item.ID})
+	return item, nil
+}
+
+// SetHaveIt answers a Check at home item (see service.Lists).
+func (s *Service) SetHaveIt(ctx context.Context, sc domain.Scope, itemID uuid.UUID, haveIt *bool) (domain.ListItem, error) {
+	var v pgtype.Bool
+	if haveIt != nil {
+		v = pgtype.Bool{Bool: *haveIt, Valid: true}
+	}
+	row, err := db.New(s.pool).SetListItemHaveIt(ctx, db.SetListItemHaveItParams{
+		HaveIt: v, ID: itemID, HouseholdID: sc.HouseholdID,
+	})
+	if err != nil {
+		return domain.ListItem{}, notFound("check at home item", err)
 	}
 	item := ItemFromDB(row)
 	s.publish(sc.HouseholdID, events.Event{Kind: events.ItemChanged, ItemID: item.ID})
@@ -172,7 +191,7 @@ func RebuildItems(ctx context.Context, q *db.Queries, householdID, planID uuid.U
 	for _, it := range items {
 		if _, err := q.UpsertGeneratedListItem(ctx, db.UpsertGeneratedListItemParams{
 			HouseholdID: householdID, PlanID: planID, Name: it.Name, NormalizedName: it.NormalizedName,
-			QtyText: it.QtyText, NeedText: it.NeedText, Section: it.Section,
+			QtyText: it.QtyText, NeedText: it.NeedText, Section: it.Section, CheckHome: it.CheckHome,
 		}); err != nil {
 			return fmt.Errorf("upsert list item: %w", err)
 		}
@@ -204,9 +223,6 @@ func LoadList(ctx context.Context, q *db.Queries, householdID, planID uuid.UUID)
 }
 
 func validSection(key string, sections []domain.Section) bool {
-	if key == domain.PantryCheckSection {
-		return true
-	}
 	for _, s := range sections {
 		if s.Key == key {
 			return true
@@ -227,7 +243,11 @@ func sectionsFromDB(rows []db.StoreSection) []domain.Section {
 func ItemFromDB(r db.ListItem) domain.ListItem {
 	it := domain.ListItem{
 		ID: r.ID, PlanID: r.PlanID, Name: r.Name, QtyText: r.QtyText, NeedText: r.NeedText,
-		Section: r.Section, Checked: r.Checked, IsManual: r.IsManual,
+		Section: r.Section, Checked: r.Checked, IsManual: r.IsManual, CheckHome: r.CheckHome,
+	}
+	if r.HaveIt.Valid {
+		v := r.HaveIt.Bool
+		it.HaveIt = &v
 	}
 	if r.CheckedBy.Valid {
 		id := r.CheckedBy.UUID

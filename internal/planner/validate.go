@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -17,8 +18,15 @@ import (
 type Rules struct {
 	Profile     domain.Profile
 	SectionKeys []string
-	// Day, when set, means exactly one meal for that day (a swap).
-	Day domain.Weekday
+	// Swap, when set, means exactly one meal of that type (and day, when
+	// the swap has one) instead of a whole week matching the meal targets.
+	Swap *SwapRule
+}
+
+// SwapRule is the one meal a swap must return.
+type SwapRule struct {
+	MealType domain.MealType
+	Day      domain.Weekday // "" for any
 }
 
 var (
@@ -73,48 +81,89 @@ func Validate(raw []byte, r Rules) (domain.MealPlanJSON, []string) {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
 
-	if r.Day != "" {
-		if len(plan.Meals) != 1 {
-			add("return exactly one meal (for %s), not %d", r.Day, len(plan.Meals))
-		} else if plan.Meals[0].Day != r.Day {
-			add("the meal must be for %s, not %s", r.Day, plan.Meals[0].Day)
+	if r.Swap != nil {
+		switch {
+		case len(plan.Meals) != 1:
+			add("return exactly one meal (a %s), not %d", r.Swap.MealType, len(plan.Meals))
+		case plan.Meals[0].MealType != r.Swap.MealType:
+			add("the meal must be a %s, not a %s", r.Swap.MealType, plan.Meals[0].MealType)
+		case r.Swap.Day != "" && (plan.Meals[0].Day == nil || *plan.Meals[0].Day != r.Swap.Day):
+			add("the meal's day must be %s", r.Swap.Day)
 		}
+	} else {
+		problems = append(problems, targetProblems(plan.Meals, r.Profile.MealTargets)...)
 	}
 
 	sections := map[string]bool{}
 	for _, k := range r.SectionKeys {
 		sections[k] = true
 	}
-	seenDay := map[domain.Weekday]bool{}
+	seenDay := map[domain.MealType]map[domain.Weekday]bool{}
 	for _, m := range plan.Meals {
-		if seenDay[m.Day] {
-			add("%s has more than one meal", m.Day)
+		name := mealName(m)
+		// Two meals of one type may share a day only when the type has
+		// more meals than days.
+		if m.Day != nil && r.Swap == nil && r.Profile.MealTargets[m.MealType] <= len(domain.Weekdays) {
+			if seenDay[m.MealType] == nil {
+				seenDay[m.MealType] = map[domain.Weekday]bool{}
+			}
+			if seenDay[m.MealType][*m.Day] {
+				add("%s: another %s is already suggested for %s; pick a different day or null", name, m.MealType, *m.Day)
+			}
+			seenDay[m.MealType][*m.Day] = true
 		}
-		seenDay[m.Day] = true
 
-		if r.Profile.OnePot && !m.OnePot {
-			add("%s (%q): the household only cooks one-pot meals; make it one-pot and set one_pot to true", m.Day, m.Title)
+		if r.Profile.OnePot && !m.OnePot && m.MealType != domain.MealBaking {
+			add("%s: the household only cooks one-pot meals; make it one-pot and set one_pot to true", name)
 		}
 		for _, term := range r.Profile.Avoid {
 			if shopping.ContainsTerm(m.Title, term) {
-				add("%s (%q): the title mentions %q, which is on the avoid list", m.Day, m.Title, term)
+				add("%s: the title mentions %q, which is on the avoid list", name, term)
 			}
 		}
 		for _, ing := range m.Ingredients {
 			if !sections[ing.Section] {
-				add("%s (%q): ingredient %q uses unknown section %q; use one of the listed section keys", m.Day, m.Title, ing.Name, ing.Section)
+				add("%s: ingredient %q uses unknown section %q; use one of the listed section keys", name, ing.Name, ing.Section)
 			}
 			for _, term := range r.Profile.Avoid {
 				if shopping.ContainsTerm(ing.NormalizedName, term) || shopping.ContainsTerm(ing.Name, term) {
-					add("%s (%q): ingredient %q is on the avoid list (%q); replace it", m.Day, m.Title, ing.Name, term)
+					add("%s: ingredient %q is on the avoid list (%q); replace it", name, ing.Name, term)
 				}
 			}
 		}
-		if r.Profile.BabyPortions {
+		if r.Profile.BabyPortions && m.MealType != domain.MealBaking {
 			problems = append(problems, babyProblems(m)...)
 		}
 	}
 	return plan, problems
+}
+
+// targetProblems checks the number of meals per type against the targets.
+func targetProblems(meals []domain.MealJSON, targets map[domain.MealType]int) []string {
+	got := map[domain.MealType]int{}
+	for _, m := range meals {
+		got[m.MealType]++
+	}
+	var out []string
+	for _, t := range domain.PlannedMealTypes {
+		if got[t] != targets[t] {
+			out = append(out, fmt.Sprintf("the week must have exactly %d %s meals, not %d", targets[t], t, got[t]))
+		}
+	}
+	for t, n := range got {
+		if !slices.Contains(domain.PlannedMealTypes, t) {
+			out = append(out, fmt.Sprintf("%d meals have meal_type %q; use breakfast, lunch, dinner or baking", n, t))
+		}
+	}
+	return out
+}
+
+// mealName names a meal in problem messages: dinner on monday ("Chicken rice").
+func mealName(m domain.MealJSON) string {
+	if m.Day != nil {
+		return fmt.Sprintf("%s on %s (%q)", m.MealType, *m.Day, m.Title)
+	}
+	return fmt.Sprintf("%s (%q)", m.MealType, m.Title)
 }
 
 func babyProblems(m domain.MealJSON) []string {
@@ -129,15 +178,15 @@ func babyProblems(m domain.MealJSON) []string {
 	}
 	switch {
 	case count == 0:
-		return []string{fmt.Sprintf("%s (%q): baby portions are on, but no step has baby_portion true; add one before any salt, stock or cheese", m.Day, m.Title)}
+		return []string{fmt.Sprintf("%s: baby portions are on, but no step has baby_portion true; add one before any salt, stock or cheese", mealName(m))}
 	case count > 1:
-		return []string{fmt.Sprintf("%s (%q): exactly one step may have baby_portion true, found %d", m.Day, m.Title, count)}
+		return []string{fmt.Sprintf("%s: exactly one step may have baby_portion true, found %d", mealName(m), count)}
 	}
 	var out []string
 	for i := 0; i < first; i++ {
 		if w := saltyStep.FindString(m.Steps[i].Text); w != "" {
-			out = append(out, fmt.Sprintf("%s (%q): step %d adds %q before the baby portion is taken out (step %d); move the baby_portion step before it",
-				m.Day, m.Title, i+1, w, first+1))
+			out = append(out, fmt.Sprintf("%s: step %d adds %q before the baby portion is taken out (step %d); move the baby_portion step before it",
+				mealName(m), i+1, w, first+1))
 		}
 	}
 	return out

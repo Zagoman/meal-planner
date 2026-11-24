@@ -44,7 +44,20 @@ test("a tick on one phone shows up live on the other, also after being offline",
 
   // Ben's phone gets it over SSE without reloading.
   await expect(item(ben, "onion")).toHaveClass(/checked/, { timeout: 10_000 });
-  await expect(ben.locator(".progress")).toContainText("1 of");
+  await expect(ben.locator("#progress")).toContainText("1 of");
+
+  // Check at home: Anna answers Buy for a pantry item; it joins its section
+  // on both phones, and progress counts it.
+  const home = (p: Page) => p.locator("#check-home li", { hasText: "rice" });
+  await expect(home(anna)).toBeVisible();
+  await expect(item(ben, "rice")).toHaveCount(0);
+  const before = await ben.locator("#progress").getAttribute("data-total");
+  await home(anna).getByRole("button", { name: "Buy" }).click();
+  await expect(home(anna).getByRole("button", { name: "Buy" })).toHaveAttribute("aria-pressed", "true");
+  await expect(item(ben, "rice")).toBeVisible({ timeout: 10_000 });
+  await expect(ben.locator("#progress")).toHaveAttribute("data-total", String(Number(before) + 1));
+  await home(anna).getByRole("button", { name: "Have it" }).click();
+  await expect(item(ben, "rice")).toHaveCount(0, { timeout: 10_000 });
 
   // Offline: Anna's tick is queued locally and the badge says so.
   await anna.context().setOffline(true);
@@ -68,7 +81,7 @@ test("a tick on one phone shows up live on the other, also after being offline",
   await expect.poll(() => ben.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 10_000 }).toBe(true);
   await ben.reload();
   const cached = await ben.evaluate(async () => {
-    const res = await caches.match("/", { cacheName: "mp-pages-v1" });
+    const res = await caches.match("/", { cacheName: "mp-pages-v2" });
     return res ? res.text() : "";
   });
   expect(cached).toContain("Shopping list");

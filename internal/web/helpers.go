@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/a-h/templ"
+
 	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
@@ -56,16 +58,49 @@ func checkVals(it domain.ListItem) string {
 	return fmt.Sprintf(`{"checked":"%t"}`, !it.Checked)
 }
 
-func countChecked(l domain.List) (done, total int) {
-	for _, s := range l.Sections {
-		for _, it := range s.Items {
-			total++
-			if it.Checked {
-				done++
-			}
-		}
+// qtyLine is "1 bag (1 kg) · need 700 g", or either part alone.
+func qtyLine(it domain.ListItem) string {
+	switch {
+	case it.QtyText != "" && it.NeedText != "":
+		return it.QtyText + " · " + it.NeedText
+	case it.QtyText != "":
+		return it.QtyText
 	}
-	return done, total
+	return it.NeedText
+}
+
+// barStyle is the width of the progress bar fill.
+func barStyle(done, total int) templ.SafeCSS {
+	pct := 0
+	if total > 0 {
+		pct = done * 100 / total
+	}
+	return templ.SafeCSS(fmt.Sprintf("width: %d%%;", pct))
+}
+
+// shortDay is "Mon".
+func shortDay(d domain.Weekday) string {
+	if len(d) < 3 {
+		return ""
+	}
+	return strings.ToUpper(string(d[:1])) + string(d[1:3])
+}
+
+// mealMeta is "Dinner · 30 min · suggested Wed".
+func mealMeta(m domain.Meal) string {
+	s := m.MealType.Label() + " · " + itoa(m.Minutes) + " min"
+	if m.Day != "" {
+		s += " · suggested " + shortDay(m.Day)
+	}
+	return s
+}
+
+// mealCount is "6 meals".
+func mealCount(n int) string {
+	if n == 1 {
+		return "1 meal"
+	}
+	return itoa(n) + " meals"
 }
 
 // afterBaby reports whether an ingredient is only added after the baby
@@ -97,16 +132,4 @@ func extraAfterBaby(m domain.Meal) []string {
 		}
 	}
 	return out
-}
-
-func proteinLabel(p domain.Protein) string {
-	switch p {
-	case domain.ProteinChicken:
-		return "🍗 chicken"
-	case domain.ProteinFish:
-		return "🐟 fish"
-	case domain.ProteinVegetarian:
-		return "🥕 vegetarian"
-	}
-	return string(p)
 }

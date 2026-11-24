@@ -7,7 +7,7 @@
 // - Everything else (POSTs, the SSE stream, /api) goes straight to the network.
 // - Visiting /login (after logout or an expired session) drops cached pages,
 //   so one member's household data does not linger on a shared phone.
-const VERSION = "v1";
+const VERSION = "v2";
 const ASSETS = `mp-assets-${VERSION}`;
 const PAGES = `mp-pages-${VERSION}`;
 const PRECACHE = [
@@ -18,7 +18,7 @@ const PRECACHE = [
   "/static/manifest.webmanifest",
   "/static/icon.svg",
 ];
-const CACHED_PAGES = [/^\/$/, /^\/week$/, /^\/meals\/[0-9a-f-]+$/];
+const CACHED_PAGES = [/^\/$/, /^\/list$/, /^\/week$/, /^\/meals\/[0-9a-f-]+$/];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
@@ -86,7 +86,7 @@ async function pageNetworkFirst(req, url) {
     return new Response(
       '<!doctype html><meta name="viewport" content="width=device-width"><title>Offline</title>' +
         '<p style="font-family:system-ui;padding:1rem">You are offline and this page has not been saved yet. ' +
-        '<a href="/">Open the shopping list</a></p>',
+        '<a href="/list">Open the shopping list</a></p>',
       { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
   }

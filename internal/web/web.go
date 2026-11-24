@@ -96,9 +96,14 @@ func Routes(d app.Deps) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(h.requireAuth)
 		r.Get("/", h.listPage)
+		r.Get("/list", h.listPage)
 		r.Get("/list/stream", h.listStream)
 		r.Post("/list/items", h.addItem)
+		// toggle and check both set the posted state (idempotent for the
+		// offline queue); check is the older name.
+		r.Post("/list/items/{id}/toggle", h.checkItem)
 		r.Post("/list/items/{id}/check", h.checkItem)
+		r.Post("/list/items/{id}/home", h.haveItem)
 		r.Post("/list/items/{id}/delete", h.deleteItem)
 
 		r.Get("/week", h.weekPage)
@@ -107,10 +112,14 @@ func Routes(d app.Deps) http.Handler {
 		r.Get("/meals/{id}", h.mealPage)
 		r.Post("/meals/{id}/rate", h.rate)
 
+		r.Get("/recipes", h.recipesPage)
 		r.Get("/profile", h.profilePage)
 		r.Post("/profile", h.saveProfile)
 		r.Post("/profile/sections/move", h.moveSection)
 		r.Post("/profile/pantry", h.savePantry)
+		r.Post("/profile/avoid", h.addAvoid)
+		r.Delete("/profile/avoid/{id}", h.deleteAvoid)
+		r.Post("/profile/avoid/{id}/delete", h.deleteAvoid) // without JavaScript
 
 		r.Get("/household", h.householdPage)
 		r.Post("/household/invites", h.createInvite)
