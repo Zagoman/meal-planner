@@ -540,3 +540,42 @@ func byName(l domain.List) map[string]domain.ListItem {
 	}
 	return out
 }
+
+// A plan from before the review flow starts on a Monday and does not stop
+// the weekly draft for a Sunday shopper (the production case).
+func TestLegacyMondayPlanDoesNotBlockDraft(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := newDraftEnv(t, weekA(t), weekA(t))
+	d.setProfile(t, d.a, func(p *db.UpdateProfileParams) { p.ShoppingDay = "sunday" })
+	d.setProfile(t, d.b, func(p *db.UpdateProfileParams) { p.ShoppingDay = "monday" })
+	d.now = time.Date(2026, 11, 24, 12, 0, 0, 0, copenhagen)  // Tuesday
+	if _, err := d.plans.Generate(ctx, d.a, ""); err != nil { // old flow: week_start Monday 30 Nov
+		t.Fatal(err)
+	}
+	cur, _ := d.plans.Current(ctx, d.a)
+	if cur.WeekStart.Format(time.DateOnly) != "2026-11-30" {
+		t.Fatalf("legacy week start %v", cur.WeekStart)
+	}
+	d.now = time.Date(2026, 11, 28, 18, 0, 0, 0, copenhagen) // Saturday 18:00
+	if err := d.plans.Tick(ctx, d.now); err != nil {
+		t.Fatal(err)
+	}
+	d.run(t)
+	r, err := d.plans.Review(ctx, d.a)
+	if err != nil || r.Plan.WeekStart.Format(time.DateOnly) != "2026-11-29" {
+		t.Fatalf("weekly draft for Sunday 29 Nov: %+v %v", r.Plan, err)
+	}
+	// Confirmed, it covers the week: the next draft goes to 6 Dec.
+	if _, err := d.plans.Confirm(ctx, d.a); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.plans.RequestDraft(ctx, d.a); err != nil {
+		t.Fatal(err)
+	}
+	q := db.New(d.pool)
+	job, err := q.LatestJob(ctx, db.LatestJobParams{HouseholdID: d.a.HouseholdID, Kind: "draft"})
+	if err != nil || !strings.Contains(string(job.Payload), `"2026-12-06"`) {
+		t.Errorf("next draft payload %s %v", job.Payload, err)
+	}
+}

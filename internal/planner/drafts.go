@@ -120,6 +120,14 @@ func nextShoppingDate(local time.Time, day domain.Weekday) time.Time {
 	return d.AddDate(0, 0, offset)
 }
 
+// covers reports whether a confirmed plan already is the plan for the
+// shopping week starting on week. Plans from the review flow start on the
+// shopping day; older plans start on a Monday and only mark when they were
+// made, so they never cover a shopping week.
+func covers(active db.Plan, week time.Time) bool {
+	return active.WeekStart.Weekday() == week.Weekday() && !active.WeekStart.Before(week)
+}
+
 // confirmsAt is when a draft for weekStart confirms itself: that date at
 // the auto-confirm time, in the household's zone.
 func confirmsAt(weekStart time.Time, p domain.Profile) time.Time {
@@ -353,7 +361,7 @@ func (s *Service) RequestDraft(ctx context.Context, sc domain.Scope) (domain.Job
 	}
 	week := nextShoppingDate(s.opts.Now().In(location(p)), p.ShoppingDay)
 	// A week that already has a confirmed plan gets the following week.
-	if active, err := q.GetActivePlan(ctx, sc.HouseholdID); err == nil && !active.WeekStart.Before(week) {
+	if active, err := q.GetActivePlan(ctx, sc.HouseholdID); err == nil && covers(active, week) {
 		week = week.AddDate(0, 0, 7)
 	}
 	job, err := jobs.Enqueue(ctx, q, jobs.New{
@@ -642,7 +650,7 @@ func (s *Service) runDraft(ctx context.Context, job db.Job) (any, error) {
 			return false, err
 		}
 		active, err := q.GetActivePlan(ctx, sc.HouseholdID)
-		if err == nil && !active.WeekStart.Before(week) {
+		if err == nil && covers(active, week) {
 			return true, nil
 		}
 		return false, nil
