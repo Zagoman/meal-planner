@@ -70,10 +70,8 @@ own sign-in.
   the SSE stream still sends the whole list as one `list` event. The stable
   ids (`#progress`, `#check-home`, `#section-{key}`, `#item-{id}`) are in
   place for window 2's per-partial events on `GET /events`.
-- Swap on the Week page works only for a dinner with a suggested day
-  (`SwapMeal` is still by day). Window 2 swaps any meal by id.
-- Generation is still synchronous in the request (up to 60 s). Window 2 moves
-  it to the `jobs` worker.
+- (Fixed in window 2: swaps are by meal id in the review, and the web UI's
+  Claude calls run as jobs.)
 - The migration's SQL normalization of old avoid entries does not make the
   last word singular ("mushrooms" stays "mushrooms"); matching still works
   because validation compares whole words, and the app normalizes new
@@ -83,10 +81,74 @@ own sign-in.
 - No JSON API endpoints yet for Have it / Buy or for adding or removing one
   avoid entry (the profile `PUT` replaces the whole list).
 
-## Next: window 2 – Draft and confirm
+## Window 2 – Draft and confirm (branch `window-2-draft-confirm`)
 
-`plans.status`/`confirmed_*`, `meal_votes`, `jobs` table and worker, SSE
-`GET /events` with per-partial events, draft card, review page, swap by meal
-id, Ask Claude, confirm and auto-confirm, weekly draft schedule. Open
-questions for it: thumbs-down rule at auto-confirm, and whether the weekly
-draft time is a household setting.
+Open questions answered with the handoff's defaults: any thumbs-down is
+swapped at auto-confirm; the weekly draft is made at 18:00 (not a setting).
+
+**Built**
+
+- Migration `00003_drafts_votes_jobs.sql`:
+  - `plans`: `confirmed_by`, `confirmed_at`, `auto_confirmed`, `confirm_note`;
+    at most one draft per household and week (`plans_one_draft_per_week`).
+    `active` stays the stored name for "confirmed".
+  - `profiles.time_zone` (default Europe/Copenhagen; not editable yet).
+  - `meal_votes` (+1 / −1, one per member and meal).
+  - `jobs` (kind, status, dedupe key, payload, result, error, attempts).
+  - `usage_log.kind` allows `ask`, `auto_confirm`, `tweak`, `import`.
+- `internal/jobs`: queue + worker in the binary. Claims with `FOR UPDATE SKIP
+  LOCKED` (2 goroutines), 90 s per job, a job left running by a crash is
+  retried up to three times. Scheduled jobs carry a dedupe key so they fire
+  once.
+- `service.Drafts` (implemented in `internal/planner/drafts.go`):
+  draft card state, review with votes, vote, swap (in place: same meal id,
+  votes cleared), remove, Ask Claude (Claude returns the whole set; meals it
+  keeps by type + title keep their id and votes), list preview (never
+  stored), confirm.
+  - Confirm locks the draft row: two phones confirming at once confirm once.
+    A draft for the week already under way (or the same week as the active
+    plan) keeps manual items, ticks and Have it answers of items still
+    needed; a draft for next week starts a fresh list.
+  - A draft targets the next shopping day; if that week already has a
+    confirmed plan, the week after.
+  - Schedules (`Tick`, every minute, household time zone): weekly draft from
+    18:00 the evening before the shopping day (skipped if that week already
+    has a draft or plan); auto-confirm on the shopping day from the
+    auto-confirm time. Auto-confirm swaps every thumbs-down meal in one
+    Claude call; if it fails, the plan confirms with them kept and the Week
+    page shows a note.
+  - Failed jobs never change data; the card, meal or meal list shows the
+    error with Try again.
+- SSE `GET /events` (one stream per household): `list.item`, `meal.updated`
+  plus `meal-<id>`, `plan.updated`, `job.failed`. `/list/stream` now only
+  re-renders on list changes.
+- Web (wireframes P1 with the draft card, P3 Review without "Not cooked"):
+  - Week: draft card (none / making / ready / failed), refreshes over SSE.
+    The old "Make a new plan" form and the Week page's swap are gone.
+  - `GET /plans/next`: full screen (no tab bar, "‹ Week"), Ask Claude,
+    meal cards with thumbs up/down, swap, remove, "Swapped automatically if
+    still disliked at 08:00", list preview line ("Show" opens
+    `/plans/next/list-preview`), Confirm week. When another phone confirms,
+    this one is sent to the week.
+  - Routes as in the handoff, plus `GET /plans/next/card`,
+    `GET /plans/next/meals`, `GET /meals/{id}/card` (the partials the SSE
+    events refetch) and `POST /meals/{id}/delete` (no JavaScript).
+- The JSON API is unchanged: `POST /api/plans` still makes and confirms a
+  plan at once (now in one transaction).
+- Tests: planner draft flow (card, votes, swap, failed swap, Ask Claude,
+  preview, confirm once, carry-over, schedules, auto-confirm with and
+  without a working Claude, cross-household), the job queue (dedupe, each
+  job once with 4 workers, crash recovery), web routes + `/events`
+  isolation, and Playwright: two phones review together (votes and swaps
+  on the other phone within 2 s, both confirm, confirmed once).
+
+**Known issues**
+
+- Until window 3, the card's "Start review" opens the review directly (no
+  rating step) and the review has no "Not cooked last week" section.
+- Ask Claude matches kept meals by type and title; if Claude renames a meal
+  it means to keep, that meal loses its votes.
+- The time zone is not editable in the UI (default Europe/Copenhagen).
+- The draft-ready email is window 4.
+
+## Next: window 3 – Rating and recipe library

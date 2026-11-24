@@ -224,3 +224,53 @@ func orDefault(s, d string) string {
 	}
 	return s
 }
+
+// MealLine is one meal of a plan as a prompt lists it.
+type MealLine struct {
+	Type  domain.MealType
+	Day   domain.Weekday
+	Title string
+}
+
+func (m MealLine) String() string {
+	if m.Day != "" {
+		return fmt.Sprintf("%s, day %s: %q", m.Type, m.Day, m.Title)
+	}
+	return fmt.Sprintf("%s, no day: %q", m.Type, m.Title)
+}
+
+// BuildAskPrompt returns the user message for Ask Claude: the household's
+// request applied to the whole draft.
+func BuildAskPrompt(in PromptInput, current []MealLine) string {
+	var b strings.Builder
+	writeProfile(&b, in.Profile, in.Sections)
+	writeFeedback(&b, in.Feedback)
+	b.WriteString("\n## Current draft for the week\n")
+	for _, m := range current {
+		fmt.Fprintf(&b, "- %s\n", m)
+	}
+	fmt.Fprintf(&b, "\n## Task\nReturn the complete set of meals for the week after applying the household's request below. "+
+		"Keep every meal the request does not ask to change: same title, meal_type and day. "+
+		"The household usually plans %s; change the number of meals only if the request asks for it.\n",
+		targetsText(in.Profile.MealTargets))
+	writeRequest(&b, in.Request)
+	return b.String()
+}
+
+// BuildReplacePrompt returns the user message for replacing several
+// disliked meals at once (auto-confirm).
+func BuildReplacePrompt(in PromptInput, replace []MealLine, keep []string) string {
+	var b strings.Builder
+	writeProfile(&b, in.Profile, in.Sections)
+	writeFeedback(&b, in.Feedback)
+	fmt.Fprintf(&b, "\n## Task\nThe household disliked these %d meals. Return exactly %d new meals, one for each, with the same meal_type and day, clearly different from the meal it replaces:\n",
+		len(replace), len(replace))
+	for _, m := range replace {
+		fmt.Fprintf(&b, "- %s\n", m)
+	}
+	if len(keep) > 0 {
+		fmt.Fprintf(&b, "The rest of the week is: %s; do not repeat those.\n", strings.Join(quoteAll(keep), ", "))
+	}
+	writeRequest(&b, "")
+	return b.String()
+}

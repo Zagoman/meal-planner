@@ -147,6 +147,7 @@ type Profile struct {
 	Shop            string   `json:"shop"`
 	ShoppingDay     Weekday  `json:"shopping_day"`
 	AutoConfirmTime string   `json:"auto_confirm_time"` // "08:00", household time zone
+	TimeZone        string   `json:"time_zone"`         // IANA name, default Europe/Copenhagen
 	BabyPortions    bool     `json:"baby_portions"`
 	Language        string   `json:"language"`
 }
@@ -216,13 +217,19 @@ const (
 	PlanArchived PlanStatus = "archived"
 )
 
+// Plan is a week of meals. A "draft" is waiting for review; "active" is
+// the confirmed plan the shopping list belongs to.
 type Plan struct {
-	ID        uuid.UUID  `json:"id"`
-	WeekStart time.Time  `json:"week_start"`
-	Status    PlanStatus `json:"status"`
-	Prompt    string     `json:"prompt"`
-	CreatedAt time.Time  `json:"created_at"`
-	Meals     []Meal     `json:"meals"`
+	ID            uuid.UUID  `json:"id"`
+	WeekStart     time.Time  `json:"week_start"`
+	Status        PlanStatus `json:"status"`
+	Prompt        string     `json:"prompt"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ConfirmedAt   *time.Time `json:"confirmed_at,omitempty"`
+	AutoConfirmed bool       `json:"auto_confirmed"`
+	// ConfirmNote explains an auto-confirm that kept disliked meals.
+	ConfirmNote string `json:"confirm_note,omitempty"`
+	Meals       []Meal `json:"meals"`
 }
 
 type Meal struct {

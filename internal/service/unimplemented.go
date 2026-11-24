@@ -16,6 +16,7 @@ type Unimplemented struct{}
 
 var (
 	_ Plans      = Unimplemented{}
+	_ Drafts     = Unimplemented{}
 	_ Lists      = Unimplemented{}
 	_ Profiles   = Unimplemented{}
 	_ Feedback   = Unimplemented{}
@@ -26,7 +27,7 @@ var (
 // NewUnimplemented returns a Services where every method is unimplemented.
 func NewUnimplemented() Services {
 	u := Unimplemented{}
-	return Services{Auth: u, Households: u, Profiles: u, Plans: u, Lists: u, Feedback: u}
+	return Services{Auth: u, Households: u, Profiles: u, Plans: u, Drafts: u, Lists: u, Feedback: u}
 }
 
 var errNI = domain.ErrNotImplemented
@@ -129,4 +130,33 @@ func (Unimplemented) SwitchHousehold(context.Context, string, uuid.UUID) (domain
 }
 func (Unimplemented) CreateAPIToken(context.Context, domain.Scope, string) (string, error) {
 	return "", errNI
+}
+
+func (Unimplemented) Card(context.Context, domain.Scope) (domain.DraftCard, error) {
+	return domain.DraftCard{}, errNI
+}
+func (Unimplemented) RequestDraft(context.Context, domain.Scope) (domain.Job, error) {
+	return domain.Job{}, errNI
+}
+func (Unimplemented) Review(context.Context, domain.Scope) (domain.Review, error) {
+	return domain.Review{}, errNI
+}
+func (Unimplemented) DraftMeal(context.Context, domain.Scope, uuid.UUID) (domain.DraftMeal, error) {
+	return domain.DraftMeal{}, errNI
+}
+func (Unimplemented) Vote(context.Context, domain.Scope, uuid.UUID, int) (domain.DraftMeal, error) {
+	return domain.DraftMeal{}, errNI
+}
+func (Unimplemented) RequestSwap(context.Context, domain.Scope, uuid.UUID) (domain.DraftMeal, error) {
+	return domain.DraftMeal{}, errNI
+}
+func (Unimplemented) RemoveMeal(context.Context, domain.Scope, uuid.UUID) error { return errNI }
+func (Unimplemented) RequestAsk(context.Context, domain.Scope, string) (domain.Job, error) {
+	return domain.Job{}, errNI
+}
+func (Unimplemented) ListPreview(context.Context, domain.Scope) (domain.List, error) {
+	return domain.List{}, errNI
+}
+func (Unimplemented) Confirm(context.Context, domain.Scope) (domain.Plan, error) {
+	return domain.Plan{}, errNI
 }

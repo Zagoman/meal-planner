@@ -79,6 +79,25 @@ type Invite struct {
 	CreatedAt   time.Time
 }
 
+type Job struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+	Kind        string
+	Status      string
+	DedupeKey   pgtype.Text
+	PlanID      uuid.NullUUID
+	MealID      uuid.NullUUID
+	MemberID    uuid.NullUUID
+	Payload     []byte
+	Result      []byte
+	Error       string
+	Attempts    int32
+	RunAfter    time.Time
+	CreatedAt   time.Time
+	StartedAt   *time.Time
+	FinishedAt  *time.Time
+}
+
 type ListItem struct {
 	ID             uuid.UUID
 	HouseholdID    uuid.UUID
@@ -117,6 +136,14 @@ type Meal struct {
 	AddedFrom        string
 }
 
+type MealVote struct {
+	HouseholdID uuid.UUID
+	MealID      uuid.UUID
+	MemberID    uuid.UUID
+	Vote        int16
+	UpdatedAt   time.Time
+}
+
 type Member struct {
 	ID            uuid.UUID
 	Email         string
@@ -134,13 +161,17 @@ type PantryItem struct {
 }
 
 type Plan struct {
-	ID          uuid.UUID
-	HouseholdID uuid.UUID
-	WeekStart   time.Time
-	Status      string
-	Prompt      string
-	CreatedBy   uuid.NullUUID
-	CreatedAt   time.Time
+	ID            uuid.UUID
+	HouseholdID   uuid.UUID
+	WeekStart     time.Time
+	Status        string
+	Prompt        string
+	CreatedBy     uuid.NullUUID
+	CreatedAt     time.Time
+	ConfirmedBy   uuid.NullUUID
+	ConfirmedAt   *time.Time
+	AutoConfirmed bool
+	ConfirmNote   string
 }
 
 type Profile struct {
@@ -156,6 +187,7 @@ type Profile struct {
 	UpdatedAt       time.Time
 	MealTargets     []byte
 	AutoConfirmTime pgtype.Time
+	TimeZone        string
 }
 
 type Recipe struct {

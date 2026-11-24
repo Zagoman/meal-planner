@@ -1,0 +1,217 @@
+package web
+
+import (
+	"github.com/google/uuid"
+
+	"github.com/Zagoman/meal-planner/internal/domain"
+)
+
+// DraftCard is the Week page's card about next week's plan. It refetches
+// itself when the plan changes or a job fails, on every phone.
+templ DraftCard(c domain.DraftCard) {
+	<section
+		id="draft-card"
+		class={ "card draft-card", templ.KV("ready", c.State == domain.DraftReady) }
+		hx-get="/plans/next/card"
+		hx-trigger="sse:plan.updated, sse:job.failed"
+		hx-swap="outerHTML"
+		data-state={ string(c.State) }
+	>
+		switch c.State {
+			case domain.DraftMaking:
+				<p class="draft-title"><span class="spinner" aria-hidden="true"></span> Making your plan…</p>
+				<p class="small muted">This takes up to a minute. You can leave this page.</p>
+			case domain.DraftReady:
+				<div class="draft-head">
+					<span class="draft-title">Next week is ready</span>
+					<span class="badge draft">Draft</span>
+				</div>
+				<p class="small muted">Review { mealCount(c.MealCount) } together. Confirms itself { c.ConfirmsAt.Format("Mon 15:04") }.</p>
+				<a class="button primary" href="/plans/next">Start review</a>
+			case domain.DraftFailed:
+				<p class="draft-title">Couldn't make the plan.</p>
+				<p class="small muted">Your current plan is unchanged.</p>
+				@makeDraftForm("Try again")
+			default:
+				<p class="draft-title">Next week</p>
+				<p class="small muted">Next week's plan is made the evening before your shopping day. You can also make it now.</p>
+				@makeDraftForm("Make next week's plan now")
+		}
+	</section>
+}
+
+templ makeDraftForm(label string) {
+	<form action="/plans/next/generate" method="post" hx-post="/plans/next/generate" hx-target="#draft-card" hx-swap="outerHTML" hx-disabled-elt="find button">
+		<button type="submit" class="primary">{ label }</button>
+	</form>
+}
+
+// ConfirmNote tells the household that an auto-confirm kept disliked meals.
+templ ConfirmNote(p domain.Plan) {
+	if p.AutoConfirmed && p.ConfirmNote != "" {
+		<p class="notice warn" role="status">{ p.ConfirmNote }</p>
+	}
+}
+
+templ ReviewPage(r domain.Review, me uuid.UUID, preview domain.List) {
+	@FullLayout("Next week", "/week", "Week") {
+		<div class="review" hx-ext="sse" sse-connect="/events">
+			<p class="sub small muted">
+				<span class="badge draft">Draft</span>
+				{ mealCount(len(r.Meals)) } · confirms itself { r.ConfirmsAt.Format("Mon 15:04") }
+			</p>
+			@AskForm()
+			@DraftMeals(r, me)
+			<div class="review-foot">
+				@ListPreviewLink(preview)
+				<form action="/plans/next/confirm" method="post">
+					<button type="submit" class="primary wide">Confirm week</button>
+				</form>
+			</div>
+		</div>
+	}
+}
+
+templ AskForm() {
+	<form
+		id="ask"
+		class="ask"
+		action="/plans/next/ask"
+		method="post"
+		hx-post="/plans/next/ask"
+		hx-target="#draft-meals"
+		hx-swap="outerHTML"
+		hx-disabled-elt="find button"
+		hx-on::after-request="if (event.detail.successful) this.reset()"
+	>
+		<label class="visually-hidden" for="ask-prompt">Ask Claude to change the plan</label>
+		<input id="ask-prompt" name="prompt" required maxlength="500" placeholder="Ask Claude: less fish, one cake for Sunday…" autocomplete="off"/>
+		<button type="submit" class="icon-btn" aria-label="Send to Claude">
+			@icon("m22 2-7 20-4-9-9-4Z M22 2 11 13")
+		</button>
+	</form>
+}
+
+// DraftMeals is every draft meal; it refetches when the plan changes (a
+// new draft, Ask Claude, confirm).
+templ DraftMeals(r domain.Review, me uuid.UUID) {
+	<div id="draft-meals" class="meals" hx-get="/plans/next/meals" hx-trigger="sse:plan.updated" hx-swap="outerHTML">
+		if r.Asking {
+			<p class="notice" role="status"><span class="spinner" aria-hidden="true"></span> Claude is changing the plan…</p>
+		} else if r.AskError != "" {
+			<p class="notice warn" role="status">Couldn't change the plan. The meals below are unchanged. Try again.</p>
+		}
+		for _, m := range r.Meals {
+			@DraftMealCard(m, me, r.ConfirmsAt.Format("15:04"))
+		}
+		if len(r.Meals) == 0 {
+			<p class="empty muted">No meals left. Ask Claude for some.</p>
+		}
+	</div>
+}
+
+// DraftMealCard is one meal with votes, swap and remove. It refetches when
+// that meal changes on any phone.
+templ DraftMealCard(m domain.DraftMeal, me uuid.UUID, confirmTime string) {
+	<article
+		id={ "meal-" + m.ID.String() }
+		class={ "card draft-meal", templ.KV("disliked", m.Downs() > 0), templ.KV("busy", m.Swapping) }
+		hx-get={ "/meals/" + m.ID.String() + "/card" }
+		hx-trigger={ "sse:meal-" + m.ID.String() }
+		hx-swap="outerHTML"
+	>
+		<div class="dm-text">
+			<a class="meal-title" href={ templ.SafeURL("/meals/" + m.ID.String()) }>{ m.Title }</a>
+			<span class="small muted">{ mealMeta(m.Meal) }{ voteText(m, me) }</span>
+		</div>
+		if m.Swapping {
+			<p class="small muted" role="status"><span class="spinner" aria-hidden="true"></span> Swapping…</p>
+		} else {
+			<div class="dm-actions">
+				@voteButton(m, 1)
+				@voteButton(m, -1)
+				<form action={ templ.SafeURL("/meals/" + m.ID.String() + "/swap") } method="post"
+					hx-post={ "/meals/" + m.ID.String() + "/swap" } hx-target="closest article" hx-swap="outerHTML">
+					<button type="submit" class="icon-btn" aria-label={ "Swap " + m.Title }>
+						@icon("M17 2l4 4-4 4 M3 11v-1a4 4 0 0 1 4-4h14 M7 22l-4-4 4-4 M21 13v1a4 4 0 0 1-4 4H3")
+					</button>
+				</form>
+				<form action={ templ.SafeURL("/meals/" + m.ID.String() + "/delete") } method="post"
+					hx-delete={ "/meals/" + m.ID.String() } hx-target="closest article" hx-swap="outerHTML">
+					<button type="submit" class="icon-btn" aria-label={ "Remove " + m.Title }>
+						@icon("M18 6 6 18 M6 6l12 12")
+					</button>
+				</form>
+				if m.Downs() > 0 {
+					<span class="small warn-text">Swapped automatically if still disliked at { confirmTime }</span>
+				}
+			</div>
+			if m.SwapError != "" {
+				<p class="small warn-text" role="status">Couldn't swap this meal. Try again.</p>
+			}
+		}
+	</article>
+}
+
+// voteButton posts the vote, or 0 to take back the caller's vote.
+templ voteButton(m domain.DraftMeal, v int) {
+	{{ on := m.Mine == v }}
+	<form action={ templ.SafeURL("/meals/" + m.ID.String() + "/vote") } method="post"
+		hx-post={ "/meals/" + m.ID.String() + "/vote" } hx-target="closest article" hx-swap="outerHTML">
+		if on {
+			<input type="hidden" name="vote" value="0"/>
+		} else {
+			<input type="hidden" name="vote" value={ itoa(v) }/>
+		}
+		if v > 0 {
+			<button type="submit" class={ "icon-btn", templ.KV("on", on) } aria-pressed={ boolStr(on) } aria-label="Thumbs up">
+				@icon("M7 10v12 M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z")
+			</button>
+		} else {
+			<button type="submit" class={ "icon-btn", "down", templ.KV("on", on) } aria-pressed={ boolStr(on) } aria-label="Thumbs down">
+				@icon("M17 14V2 M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z")
+			</button>
+		}
+	</form>
+}
+
+templ icon(d string) {
+	<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={ d }></path></svg>
+}
+
+// ListPreviewLink is the review page's line about the list the draft would
+// make; it refetches when meals change.
+templ ListPreviewLink(l domain.List) {
+	<div id="list-preview" hx-get="/plans/next/list-preview" hx-trigger="sse:meal.updated, sse:plan.updated" hx-swap="outerHTML">
+		<a class="preview-link" href="/plans/next/list-preview">
+			<span>Shopping list preview · { itoa(previewCount(l)) } items</span>
+			<span class="go">Show</span>
+		</a>
+	</div>
+}
+
+templ ListPreviewPage(l domain.List) {
+	@FullLayout("List preview", "/plans/next", "Next week") {
+		<p class="sub small muted">The list this draft makes once it is confirmed.</p>
+		if len(l.CheckHome) > 0 {
+			<section class="check-home">
+				<h2 class="sec-label">Check at home</h2>
+				<ul class="items card plain">
+					for _, it := range l.CheckHome {
+						<li class="plain-item"><span class="name">{ it.Name }</span><span class="need">{ qtyLine(it) }</span></li>
+					}
+				</ul>
+			</section>
+		}
+		for _, sec := range l.Sections {
+			<section class="sec">
+				<h2 class="sec-label">{ sec.Name }</h2>
+				<ul class="items card plain">
+					for _, it := range sec.Items {
+						<li class="plain-item"><span class="name">{ it.Name }</span><span class="need">{ qtyLine(it) }</span></li>
+					}
+				</ul>
+			</section>
+		}
+	}
+}

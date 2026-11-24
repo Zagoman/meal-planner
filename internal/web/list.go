@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Zagoman/meal-planner/internal/domain"
+	"github.com/Zagoman/meal-planner/internal/events"
 )
 
 func (h *handlers) listPage(w http.ResponseWriter, r *http.Request) {
@@ -181,12 +182,15 @@ func (h *handlers) listStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-		case _, ok := <-ch:
+		case e, ok := <-ch:
 			if !ok {
 				return
 			}
-			// Coalesce a burst (a rebuild publishes many) into one render.
-			drain(ch)
+			// Coalesce a burst (a rebuild publishes many) into one render,
+			// and skip bursts with no list change (votes on a draft).
+			if !drainList(ch, e.IsList()) {
+				continue
+			}
 			if err := send(); err != nil {
 				return
 			}
@@ -201,15 +205,18 @@ func (h *handlers) listStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func drain[T any](ch <-chan T) {
+// drainList empties ch and reports whether it or any drained event changed
+// the list.
+func drainList(ch <-chan events.Event, list bool) bool {
 	for {
 		select {
-		case _, ok := <-ch:
+		case e, ok := <-ch:
 			if !ok {
-				return
+				return list
 			}
+			list = list || e.IsList()
 		default:
-			return
+			return list
 		}
 	}
 }

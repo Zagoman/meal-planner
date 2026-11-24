@@ -21,6 +21,12 @@ type Rules struct {
 	// Swap, when set, means exactly one meal of that type (and day, when
 	// the swap has one) instead of a whole week matching the meal targets.
 	Swap *SwapRule
+	// Replace, when set, means exactly these meal types (as a multiset):
+	// the replacements for several meals at once.
+	Replace []domain.MealType
+	// AnyCount skips the meal-target check (Ask Claude may change counts);
+	// each type still holds at most domain.MaxMealsPerType meals.
+	AnyCount bool
 }
 
 // SwapRule is the one meal a swap must return.
@@ -90,6 +96,22 @@ func Validate(raw []byte, r Rules) (domain.MealPlanJSON, []string) {
 		case r.Swap.Day != "" && (plan.Meals[0].Day == nil || *plan.Meals[0].Day != r.Swap.Day):
 			add("the meal's day must be %s", r.Swap.Day)
 		}
+	} else if r.Replace != nil {
+		want := map[domain.MealType]int{}
+		for _, t := range r.Replace {
+			want[t]++
+		}
+		problems = append(problems, countProblems(plan.Meals, want, "the answer")...)
+	} else if r.AnyCount {
+		got := map[domain.MealType]int{}
+		for _, m := range plan.Meals {
+			got[m.MealType]++
+		}
+		for _, t := range domain.PlannedMealTypes {
+			if got[t] > domain.MaxMealsPerType {
+				add("at most %d %s meals, not %d", domain.MaxMealsPerType, t, got[t])
+			}
+		}
 	} else {
 		problems = append(problems, targetProblems(plan.Meals, r.Profile.MealTargets)...)
 	}
@@ -103,7 +125,7 @@ func Validate(raw []byte, r Rules) (domain.MealPlanJSON, []string) {
 		name := mealName(m)
 		// Two meals of one type may share a day only when the type has
 		// more meals than days.
-		if m.Day != nil && r.Swap == nil && r.Profile.MealTargets[m.MealType] <= len(domain.Weekdays) {
+		if m.Day != nil && r.Swap == nil && r.Replace == nil && r.Profile.MealTargets[m.MealType] <= len(domain.Weekdays) {
 			if seenDay[m.MealType] == nil {
 				seenDay[m.MealType] = map[domain.Weekday]bool{}
 			}
@@ -140,6 +162,10 @@ func Validate(raw []byte, r Rules) (domain.MealPlanJSON, []string) {
 
 // targetProblems checks the number of meals per type against the targets.
 func targetProblems(meals []domain.MealJSON, targets map[domain.MealType]int) []string {
+	return countProblems(meals, targets, "the week")
+}
+
+func countProblems(meals []domain.MealJSON, targets map[domain.MealType]int, what string) []string {
 	got := map[domain.MealType]int{}
 	for _, m := range meals {
 		got[m.MealType]++
@@ -147,7 +173,7 @@ func targetProblems(meals []domain.MealJSON, targets map[domain.MealType]int) []
 	var out []string
 	for _, t := range domain.PlannedMealTypes {
 		if got[t] != targets[t] {
-			out = append(out, fmt.Sprintf("the week must have exactly %d %s meals, not %d", targets[t], t, got[t]))
+			out = append(out, fmt.Sprintf("%s must have exactly %d %s meals, not %d", what, targets[t], t, got[t]))
 		}
 	}
 	for t, n := range got {

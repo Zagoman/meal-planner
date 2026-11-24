@@ -63,6 +63,7 @@ type household struct {
 	pantry   []domain.PantryItem
 	avoid    []domain.AvoidItem
 	plan     *domain.Plan // active plan, nil if none
+	draft    *draftState  // next week's draft (drafts.go)
 	meals    map[uuid.UUID]domain.Meal
 	items    []domain.ListItem
 	feedback []domain.Feedback
@@ -94,7 +95,7 @@ func New(hub *events.Hub) *Store {
 
 // Services returns the store as every service.
 func (s *Store) Services() service.Services {
-	return service.Services{Auth: s, Households: s, Profiles: s, Plans: s, Lists: s, Feedback: s}
+	return service.Services{Auth: s, Households: s, Profiles: s, Plans: s, Drafts: s, Lists: s, Feedback: s}
 }
 
 // --- fixtures --------------------------------------------------------------

@@ -263,6 +263,7 @@ func profileFromDB(p db.Profile) (domain.Profile, error) {
 		Shop:            p.Shop,
 		ShoppingDay:     domain.Weekday(p.ShoppingDay),
 		AutoConfirmTime: clock,
+		TimeZone:        p.TimeZone,
 		BabyPortions:    p.BabyPortions,
 		Language:        p.Language,
 	}, nil

@@ -138,8 +138,8 @@ func TestPagesRender(t *testing.T) {
 			`id="progress"`, `id="check-home"`, "Check at home", ">Have it<", ">Buy<", `name="section"`,
 			`aria-current="page"`, `href="/recipes"`}},
 		{"/", anna, []string{`sse-connect="/list/stream"`, `id="progress"`}},
-		{"/week", anna, []string{"Make a new plan", meal.Title, `id="week-meals"`, `id="meal-` + meal.ID.String() + `"`,
-			"Dinner · ", "cook them in any order", `hx-post="/week/swap"`, `hx-indicator="#gen-progress"`}},
+		{"/week", anna, []string{meal.Title, `id="week-meals"`, `id="meal-` + meal.ID.String() + `"`,
+			"Dinner · ", "cook them in any order", `id="draft-card"`}},
 		{"/recipes", anna, []string{"Recipes", `aria-current="page"`}},
 		{"/meals/" + meal.ID.String(), anna, []string{meal.Title, "Baby portion", "after baby portion",
 			`data-timer-min="8"`, "data-cook-open", `id="cook"`}},
@@ -323,45 +323,139 @@ func TestSecureCookieWithHTTPSBaseURL(t *testing.T) {
 	}
 }
 
-func TestWeekGenerateSwapRate(t *testing.T) {
+func TestDraftReviewFlow(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	anna := f.session(f.seed.Anna)
+	anna, ben, carl := f.session(f.seed.Anna), f.session(f.seed.Ben), f.session(f.seed.Carl)
 	before := f.seed.HomePlan
 
-	// Failure: flash error, plan unchanged.
-	rec := f.do(t, req{method: "POST", path: "/week/generate", form: url.Values{"prompt": {"please fail"}}, session: anna, hx: true})
-	if rec.Code != http.StatusBadGateway || rec.Header().Get("HX-Retarget") != "#flash" {
-		t.Errorf("failed generate: %d %q", rec.Code, rec.Header().Get("HX-Retarget"))
-	}
-	mustContain(t, "failed generate", rec.Body.String(), "current plan is unchanged")
-	if p, _ := f.store.Current(context.Background(), f.seed.Anna); p.ID != before.ID {
-		t.Error("failed generation replaced the plan")
+	// Week page: card with "make it now", listening on /events.
+	rec := f.do(t, req{path: "/week", session: anna})
+	mustContain(t, "week", rec.Body.String(), `sse-connect="/events"`, `id="draft-card"`, `data-state="none"`,
+		`hx-trigger="sse:plan.updated, sse:job.failed"`, "Make next week&#39;s plan now")
+	// No draft yet: the review page goes back to the week.
+	if rec = f.do(t, req{path: "/plans/next", session: anna}); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/week" {
+		t.Errorf("review without draft: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
 
-	// Success: the #week partial with the new plan.
-	rec = f.do(t, req{method: "POST", path: "/week/generate", form: url.Values{"prompt": {"more fish"}}, session: anna, hx: true})
+	// Make a draft (the fake runs the job at once): the card is ready.
+	rec = f.do(t, req{method: "POST", path: "/plans/next/generate", session: anna, hx: true})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("generate: %d %s", rec.Code, rec.Body)
 	}
-	mustContain(t, "generate", rec.Body.String(), `<div id="week">`)
-	p, _ := f.store.Current(context.Background(), f.seed.Anna)
-	if p.ID == before.ID {
-		t.Error("plan not replaced")
+	mustContain(t, "card", rec.Body.String(), `data-state="ready"`, "Next week is ready", `href="/plans/next"`)
+	if p, _ := f.store.Current(context.Background(), f.seed.Anna); p.ID != before.ID {
+		t.Error("a draft replaced this week's plan")
 	}
 
-	// Swap returns the new meal card for that day.
-	rec = f.do(t, req{method: "POST", path: "/week/swap", form: url.Values{"plan_id": {p.ID.String()}, "day": {"monday"}}, session: anna, hx: true})
+	// Review page: full screen (no tab bar), Ask Claude, meals, preview, confirm.
+	rec = f.do(t, req{path: "/plans/next", session: ben})
+	body := rec.Body.String()
+	mustContain(t, "review", body, "Next week", "‹ Week", `id="ask"`, `id="draft-meals"`, `id="list-preview"`,
+		"Shopping list preview", `action="/plans/next/confirm"`, `sse-connect="/events"`)
+	if strings.Contains(body, `class="tabs"`) {
+		t.Error("review page shows the tab bar")
+	}
+	r, _ := f.store.Review(context.Background(), f.seed.Anna)
+	meal := r.Meals[0]
+	mealPath := "/meals/" + meal.ID.String()
+	mustContain(t, "review", body, `id="meal-`+meal.ID.String()+`"`, `hx-trigger="sse:meal-`+meal.ID.String()+`"`)
+
+	// Votes from two members; the card names them.
+	if rec = f.do(t, req{method: "POST", path: mealPath + "/vote", form: url.Values{"vote": {"+1"}}, session: anna, hx: true}); rec.Code != http.StatusOK {
+		t.Fatalf("vote: %d %s", rec.Code, rec.Body)
+	}
+	rec = f.do(t, req{method: "POST", path: mealPath + "/vote", form: url.Values{"vote": {"-1"}}, session: ben, hx: true})
+	mustContain(t, "vote", rec.Body.String(), "liked by Anna", "disliked by you", "Swapped automatically if still disliked at")
+	if rec = f.do(t, req{method: "POST", path: mealPath + "/vote", form: url.Values{"vote": {"9"}}, session: ben, hx: true}); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("vote 9: %d", rec.Code)
+	}
+	// The card partial for SSE refreshes.
+	rec = f.do(t, req{path: mealPath + "/card", session: anna, hx: true})
+	mustContain(t, "card refetch", rec.Body.String(), "liked by you", "disliked by Ben")
+
+	// Swap keeps the card id, with new content.
+	rec = f.do(t, req{method: "POST", path: mealPath + "/swap", session: anna, hx: true})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("swap: %d %s", rec.Code, rec.Body)
 	}
-	mustContain(t, "swap", rec.Body.String(), `<article class="meal card" id="meal-`, "suggested Mon")
-	if strings.Contains(rec.Body.String(), p.Meals[0].Title) {
-		t.Error("swap returned the same meal")
+	if m, _ := f.store.DraftMeal(context.Background(), f.seed.Anna, meal.ID); m.Title == meal.Title || len(m.Votes) != 0 {
+		t.Errorf("swapped meal: %+v", m)
 	}
 
-	// Rate.
-	rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[1].ID.String() + "/rate",
+	// Ask Claude: the meals partial; a failing ask shows its error.
+	rec = f.do(t, req{method: "POST", path: "/plans/next/ask", form: url.Values{"prompt": {"please fail"}}, session: anna, hx: true})
+	mustContain(t, "ask", rec.Body.String(), `id="draft-meals"`)
+	rec = f.do(t, req{path: "/plans/next/meals", session: anna, hx: true})
+	mustContain(t, "ask failed", rec.Body.String(), "Couldn't change the plan")
+	if rec = f.do(t, req{method: "POST", path: "/plans/next/ask", form: url.Values{"prompt": {" "}}, session: anna, hx: true}); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("empty ask: %d", rec.Code)
+	}
+
+	// Remove: empty answer, the card disappears; a refetch is empty too.
+	last := r.Meals[len(r.Meals)-1]
+	rec = f.do(t, req{method: "DELETE", path: "/meals/" + last.ID.String(), session: anna, hx: true})
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Errorf("remove: %d %q", rec.Code, rec.Body)
+	}
+	if rec = f.do(t, req{path: "/meals/" + last.ID.String() + "/card", session: anna, hx: true}); rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Errorf("removed card refetch: %d %q", rec.Code, rec.Body)
+	}
+
+	// List preview: line for htmx, a page otherwise.
+	rec = f.do(t, req{path: "/plans/next/list-preview", session: anna, hx: true})
+	mustContain(t, "preview line", rec.Body.String(), `id="list-preview"`, " items")
+	rec = f.do(t, req{path: "/plans/next/list-preview", session: anna})
+	mustContain(t, "preview page", rec.Body.String(), "List preview", "‹ Next week")
+
+	// Another household: 404 for every id of this draft, and its own card.
+	for _, c := range []req{
+		{method: "POST", path: mealPath + "/vote", form: url.Values{"vote": {"-1"}}},
+		{method: "POST", path: mealPath + "/swap"},
+		{method: "DELETE", path: mealPath},
+		{method: "POST", path: mealPath + "/delete"},
+		{path: mealPath + "/card"},
+	} {
+		c.session, c.hx = carl, true
+		if rec = f.do(t, c); c.method != "" && rec.Code != http.StatusNotFound {
+			t.Errorf("%s %s as other household: %d", c.method, c.path, rec.Code)
+		} else if c.method == "" && (rec.Code != http.StatusOK || rec.Body.Len() != 0) {
+			t.Errorf("GET %s as other household: %d %q", c.path, rec.Code, rec.Body)
+		}
+	}
+	rec = f.do(t, req{path: "/plans/next/card", session: carl, hx: true})
+	mustContain(t, "other card", rec.Body.String(), `data-state="none"`)
+	if rec = f.do(t, req{path: "/plans/next", session: carl}); rec.Code != http.StatusSeeOther {
+		t.Errorf("other household review: %d", rec.Code)
+	}
+	if m, _ := f.store.DraftMeal(context.Background(), f.seed.Anna, meal.ID); m.ID != meal.ID {
+		t.Error("other household removed the meal")
+	}
+
+	// Confirm from two phones: both land on the week; the draft is the plan.
+	for _, sess := range []string{anna, ben} {
+		rec = f.do(t, req{method: "POST", path: "/plans/next/confirm", session: sess})
+		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/week" {
+			t.Errorf("confirm: %d %q", rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	if p, _ := f.store.Current(context.Background(), f.seed.Anna); p.ID != r.Plan.ID || p.Status != domain.PlanActive {
+		t.Errorf("confirmed plan: %+v", p)
+	}
+	rec = f.do(t, req{path: "/week", session: anna})
+	mustContain(t, "week after confirm", rec.Body.String(), `data-state="none"`, `id="week-meals"`)
+	// The review's meal list partial now sends the page to the week.
+	if rec = f.do(t, req{path: "/plans/next/meals", session: anna, hx: true}); rec.Header().Get("HX-Redirect") != "/week" {
+		t.Errorf("meals after confirm: %d %q", rec.Code, rec.Header().Get("HX-Redirect"))
+	}
+}
+
+func TestRateMeal(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	anna := f.session(f.seed.Anna)
+	p := f.seed.HomePlan
+	rec := f.do(t, req{method: "POST", path: "/meals/" + p.Meals[1].ID.String() + "/rate",
 		form: url.Values{"rating": {"4"}, "note": {"baby loved it"}}, session: anna, hx: true})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("rate: %d %s", rec.Code, rec.Body)
@@ -570,8 +664,13 @@ type sseEvent struct{ name, data string }
 
 func readSSE(t *testing.T, srvURL, session string) (<-chan sseEvent, func()) {
 	t.Helper()
+	return readSSEPath(t, srvURL+"/list/stream", session)
+}
+
+func readSSEPath(t *testing.T, url, session string) (<-chan sseEvent, func()) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	r, _ := http.NewRequestWithContext(ctx, "GET", srvURL+"/list/stream", nil)
+	r, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	r.AddCookie(&http.Cookie{Name: web.CookieName, Value: session})
 	res, err := http.DefaultClient.Do(r) //nolint:bodyclose // closed by the reader goroutine below
 	if err != nil {
@@ -652,6 +751,77 @@ func TestSSEOnlyOwnHousehold(t *testing.T) {
 	mustContain(t, "sse", ev.data, `<li id="item-`+f.seed.FirstHomeItem.ID.String()+`" class="item checked">`, "1 of")
 	if strings.Contains(ev.data, f.seed.FirstNeighbourItem.ID.String()) {
 		t.Error("stream contains another household's item")
+	}
+}
+
+// GET /events names the partial to refresh, and never carries another
+// household's events. A vote does not re-render the shopping list stream.
+func TestEventsStream(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	srv := httptest.NewServer(f.h)
+	defer srv.Close()
+	ctx := context.Background()
+	if _, err := f.store.RequestDraft(ctx, f.seed.Anna); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.RequestDraft(ctx, f.seed.Carl); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := f.store.Review(ctx, f.seed.Anna)
+	theirs, _ := f.store.Review(ctx, f.seed.Carl)
+
+	stream, stop := readSSEPath(t, srv.URL+"/events", f.session(f.seed.Anna))
+	defer stop()
+	list, stopList := readSSE(t, srv.URL, f.session(f.seed.Anna))
+	defer stopList()
+	if _, ok := next(t, list, 2*time.Second); !ok {
+		t.Fatal("no initial list event")
+	}
+	time.Sleep(100 * time.Millisecond) // both streams subscribed
+
+	// Another household's vote and plan change: nothing arrives.
+	if _, err := f.store.Vote(ctx, f.seed.Carl, theirs.Meals[0].ID, -1); err != nil {
+		t.Fatal(err)
+	}
+	f.hub.Publish(f.seed.Neighbours, events.Event{Kind: events.PlanUpdated})
+	if ev, ok := next(t, stream, 300*time.Millisecond); ok {
+		t.Fatalf("received another household's event: %+v", ev)
+	}
+
+	// Ben votes: meal.updated with the id, then the meal's own event.
+	mealID := r.Meals[0].ID.String()
+	if _, err := f.store.Vote(ctx, f.seed.Ben, r.Meals[0].ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"meal.updated", "meal-" + mealID} {
+		ev, ok := next(t, stream, 2*time.Second)
+		if !ok || ev.name != want || ev.data != mealID {
+			t.Fatalf("want %s, got %+v", want, ev)
+		}
+	}
+	if ev, ok := next(t, list, 300*time.Millisecond); ok {
+		t.Errorf("a vote re-rendered the shopping list: %+v", ev.name)
+	}
+	// A tick is list.item on /events.
+	if _, err := f.store.SetChecked(ctx, f.seed.Ben, f.seed.FirstHomeItem.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if ev, ok := next(t, stream, 2*time.Second); !ok || ev.name != "list.item" || ev.data != f.seed.FirstHomeItem.ID.String() {
+		t.Errorf("tick event: %+v", ev)
+	}
+	// Confirm: list.item (rebuilt) and plan.updated.
+	if _, err := f.store.Confirm(ctx, f.seed.Anna); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for range 2 {
+		if ev, ok := next(t, stream, 2*time.Second); ok {
+			got[ev.name] = true
+		}
+	}
+	if !got["plan.updated"] || !got["list.item"] {
+		t.Errorf("confirm events: %v", got)
 	}
 }
 

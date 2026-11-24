@@ -39,6 +39,123 @@ func (q *Queries) ArchiveActivePlan(ctx context.Context, householdID uuid.UUID) 
 	return err
 }
 
+const confirmDraftPlan = `-- name: ConfirmDraftPlan :execrows
+UPDATE plans SET status = 'active', confirmed_by = $1, confirmed_at = now(),
+    auto_confirmed = $2, confirm_note = $3
+WHERE id = $4 AND household_id = $5 AND status = 'draft'
+`
+
+type ConfirmDraftPlanParams struct {
+	ConfirmedBy   uuid.NullUUID
+	AutoConfirmed bool
+	ConfirmNote   string
+	ID            uuid.UUID
+	HouseholdID   uuid.UUID
+}
+
+func (q *Queries) ConfirmDraftPlan(ctx context.Context, arg ConfirmDraftPlanParams) (int64, error) {
+	result, err := q.db.Exec(ctx, confirmDraftPlan,
+		arg.ConfirmedBy,
+		arg.AutoConfirmed,
+		arg.ConfirmNote,
+		arg.ID,
+		arg.HouseholdID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const countMeals = `-- name: CountMeals :one
+SELECT count(*) FROM meals WHERE plan_id = $1 AND household_id = $2
+`
+
+type CountMealsParams struct {
+	PlanID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) CountMeals(ctx context.Context, arg CountMealsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMeals, arg.PlanID, arg.HouseholdID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createActivePlan = `-- name: CreateActivePlan :one
+INSERT INTO plans (household_id, week_start, status, prompt, created_by, confirmed_by, confirmed_at)
+VALUES ($1, $2, 'active', $3, $4, $4, now()) RETURNING id, household_id, week_start, status, prompt, created_by, created_at, confirmed_by, confirmed_at, auto_confirmed, confirm_note
+`
+
+type CreateActivePlanParams struct {
+	HouseholdID uuid.UUID
+	WeekStart   time.Time
+	Prompt      string
+	CreatedBy   uuid.NullUUID
+}
+
+// Used inside the transaction that archives the previous active plan.
+func (q *Queries) CreateActivePlan(ctx context.Context, arg CreateActivePlanParams) (Plan, error) {
+	row := q.db.QueryRow(ctx, createActivePlan,
+		arg.HouseholdID,
+		arg.WeekStart,
+		arg.Prompt,
+		arg.CreatedBy,
+	)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.WeekStart,
+		&i.Status,
+		&i.Prompt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.AutoConfirmed,
+		&i.ConfirmNote,
+	)
+	return i, err
+}
+
+const createDraftPlan = `-- name: CreateDraftPlan :one
+INSERT INTO plans (household_id, week_start, status, prompt, created_by)
+VALUES ($1, $2, 'draft', $3, $4) RETURNING id, household_id, week_start, status, prompt, created_by, created_at, confirmed_by, confirmed_at, auto_confirmed, confirm_note
+`
+
+type CreateDraftPlanParams struct {
+	HouseholdID uuid.UUID
+	WeekStart   time.Time
+	Prompt      string
+	CreatedBy   uuid.NullUUID
+}
+
+func (q *Queries) CreateDraftPlan(ctx context.Context, arg CreateDraftPlanParams) (Plan, error) {
+	row := q.db.QueryRow(ctx, createDraftPlan,
+		arg.HouseholdID,
+		arg.WeekStart,
+		arg.Prompt,
+		arg.CreatedBy,
+	)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.WeekStart,
+		&i.Status,
+		&i.Prompt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.AutoConfirmed,
+		&i.ConfirmNote,
+	)
+	return i, err
+}
+
 const createIngredient = `-- name: CreateIngredient :exec
 INSERT INTO ingredients (household_id, meal_id, position, name, normalized_name, qty, unit, section)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -130,7 +247,7 @@ func (q *Queries) CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, e
 
 const createPlan = `-- name: CreatePlan :one
 INSERT INTO plans (household_id, week_start, status, prompt, created_by)
-VALUES ($1, $2, 'draft', $3, $4) RETURNING id, household_id, week_start, status, prompt, created_by, created_at
+VALUES ($1, $2, 'draft', $3, $4) RETURNING id, household_id, week_start, status, prompt, created_by, created_at, confirmed_by, confirmed_at, auto_confirmed, confirm_note
 `
 
 type CreatePlanParams struct {
@@ -156,6 +273,10 @@ func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, e
 		&i.Prompt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.AutoConfirmed,
+		&i.ConfirmNote,
 	)
 	return i, err
 }
@@ -186,6 +307,20 @@ func (q *Queries) CreateStep(ctx context.Context, arg CreateStepParams) error {
 	return err
 }
 
+const deleteDraftForWeek = `-- name: DeleteDraftForWeek :exec
+DELETE FROM plans WHERE household_id = $1 AND week_start = $2 AND status = 'draft'
+`
+
+type DeleteDraftForWeekParams struct {
+	HouseholdID uuid.UUID
+	WeekStart   time.Time
+}
+
+func (q *Queries) DeleteDraftForWeek(ctx context.Context, arg DeleteDraftForWeekParams) error {
+	_, err := q.db.Exec(ctx, deleteDraftForWeek, arg.HouseholdID, arg.WeekStart)
+	return err
+}
+
 const deleteDraftPlan = `-- name: DeleteDraftPlan :exec
 DELETE FROM plans WHERE id = $1 AND household_id = $2 AND status = 'draft'
 `
@@ -197,6 +332,20 @@ type DeleteDraftPlanParams struct {
 
 func (q *Queries) DeleteDraftPlan(ctx context.Context, arg DeleteDraftPlanParams) error {
 	_, err := q.db.Exec(ctx, deleteDraftPlan, arg.ID, arg.HouseholdID)
+	return err
+}
+
+const deleteIngredientsForMeal = `-- name: DeleteIngredientsForMeal :exec
+DELETE FROM ingredients WHERE meal_id = $1 AND household_id = $2
+`
+
+type DeleteIngredientsForMealParams struct {
+	MealID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) DeleteIngredientsForMeal(ctx context.Context, arg DeleteIngredientsForMealParams) error {
+	_, err := q.db.Exec(ctx, deleteIngredientsForMeal, arg.MealID, arg.HouseholdID)
 	return err
 }
 
@@ -214,8 +363,51 @@ func (q *Queries) DeleteMeal(ctx context.Context, arg DeleteMealParams) error {
 	return err
 }
 
+const deleteStepsForMeal = `-- name: DeleteStepsForMeal :exec
+DELETE FROM steps WHERE meal_id = $1 AND household_id = $2
+`
+
+type DeleteStepsForMealParams struct {
+	MealID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) DeleteStepsForMeal(ctx context.Context, arg DeleteStepsForMealParams) error {
+	_, err := q.db.Exec(ctx, deleteStepsForMeal, arg.MealID, arg.HouseholdID)
+	return err
+}
+
+const deleteVote = `-- name: DeleteVote :exec
+DELETE FROM meal_votes WHERE meal_id = $1 AND member_id = $2 AND household_id = $3
+`
+
+type DeleteVoteParams struct {
+	MealID      uuid.UUID
+	MemberID    uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) DeleteVote(ctx context.Context, arg DeleteVoteParams) error {
+	_, err := q.db.Exec(ctx, deleteVote, arg.MealID, arg.MemberID, arg.HouseholdID)
+	return err
+}
+
+const deleteVotesForMeal = `-- name: DeleteVotesForMeal :exec
+DELETE FROM meal_votes WHERE meal_id = $1 AND household_id = $2
+`
+
+type DeleteVotesForMealParams struct {
+	MealID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) DeleteVotesForMeal(ctx context.Context, arg DeleteVotesForMealParams) error {
+	_, err := q.db.Exec(ctx, deleteVotesForMeal, arg.MealID, arg.HouseholdID)
+	return err
+}
+
 const getActivePlan = `-- name: GetActivePlan :one
-SELECT id, household_id, week_start, status, prompt, created_by, created_at FROM plans WHERE household_id = $1 AND status = 'active'
+SELECT id, household_id, week_start, status, prompt, created_by, created_at, confirmed_by, confirmed_at, auto_confirmed, confirm_note FROM plans WHERE household_id = $1 AND status = 'active'
 `
 
 func (q *Queries) GetActivePlan(ctx context.Context, householdID uuid.UUID) (Plan, error) {
@@ -229,6 +421,63 @@ func (q *Queries) GetActivePlan(ctx context.Context, householdID uuid.UUID) (Pla
 		&i.Prompt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.AutoConfirmed,
+		&i.ConfirmNote,
+	)
+	return i, err
+}
+
+const getDraftPlan = `-- name: GetDraftPlan :one
+SELECT id, household_id, week_start, status, prompt, created_by, created_at, confirmed_by, confirmed_at, auto_confirmed, confirm_note FROM plans WHERE household_id = $1 AND status = 'draft'
+ORDER BY week_start DESC, created_at DESC LIMIT 1
+`
+
+// The newest draft, if any.
+func (q *Queries) GetDraftPlan(ctx context.Context, householdID uuid.UUID) (Plan, error) {
+	row := q.db.QueryRow(ctx, getDraftPlan, householdID)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.WeekStart,
+		&i.Status,
+		&i.Prompt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.AutoConfirmed,
+		&i.ConfirmNote,
+	)
+	return i, err
+}
+
+const getDraftPlanForWeek = `-- name: GetDraftPlanForWeek :one
+SELECT id, household_id, week_start, status, prompt, created_by, created_at, confirmed_by, confirmed_at, auto_confirmed, confirm_note FROM plans WHERE household_id = $1 AND status = 'draft' AND week_start = $2
+`
+
+type GetDraftPlanForWeekParams struct {
+	HouseholdID uuid.UUID
+	WeekStart   time.Time
+}
+
+func (q *Queries) GetDraftPlanForWeek(ctx context.Context, arg GetDraftPlanForWeekParams) (Plan, error) {
+	row := q.db.QueryRow(ctx, getDraftPlanForWeek, arg.HouseholdID, arg.WeekStart)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.WeekStart,
+		&i.Status,
+		&i.Prompt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.AutoConfirmed,
+		&i.ConfirmNote,
 	)
 	return i, err
 }
@@ -266,7 +515,7 @@ func (q *Queries) GetMeal(ctx context.Context, arg GetMealParams) (Meal, error) 
 }
 
 const getPlan = `-- name: GetPlan :one
-SELECT id, household_id, week_start, status, prompt, created_by, created_at FROM plans WHERE id = $1 AND household_id = $2
+SELECT id, household_id, week_start, status, prompt, created_by, created_at, confirmed_by, confirmed_at, auto_confirmed, confirm_note FROM plans WHERE id = $1 AND household_id = $2
 `
 
 type GetPlanParams struct {
@@ -285,6 +534,10 @@ func (q *Queries) GetPlan(ctx context.Context, arg GetPlanParams) (Plan, error) 
 		&i.Prompt,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.AutoConfirmed,
+		&i.ConfirmNote,
 	)
 	return i, err
 }
@@ -419,6 +672,43 @@ func (q *Queries) ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, e
 	return items, nil
 }
 
+const listSchedules = `-- name: ListSchedules :many
+SELECT household_id, shopping_day, auto_confirm_time, time_zone FROM profiles
+`
+
+type ListSchedulesRow struct {
+	HouseholdID     uuid.UUID
+	ShoppingDay     string
+	AutoConfirmTime pgtype.Time
+	TimeZone        string
+}
+
+// Every household's schedule settings, for the scheduler.
+func (q *Queries) ListSchedules(ctx context.Context) ([]ListSchedulesRow, error) {
+	rows, err := q.db.Query(ctx, listSchedules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSchedulesRow{}
+	for rows.Next() {
+		var i ListSchedulesRow
+		if err := rows.Scan(
+			&i.HouseholdID,
+			&i.ShoppingDay,
+			&i.AutoConfirmTime,
+			&i.TimeZone,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStepsForMeal = `-- name: ListStepsForMeal :many
 SELECT id, household_id, meal_id, position, text, timer_min, baby_portion FROM steps WHERE meal_id = $1 AND household_id = $2 ORDER BY position
 `
@@ -456,6 +746,197 @@ func (q *Queries) ListStepsForMeal(ctx context.Context, arg ListStepsForMealPara
 	return items, nil
 }
 
+const listVotesForMeal = `-- name: ListVotesForMeal :many
+SELECT v.meal_id, v.member_id, v.vote, mb.name, mb.email
+FROM meal_votes v JOIN members mb ON mb.id = v.member_id
+WHERE v.meal_id = $1 AND v.household_id = $2
+ORDER BY v.updated_at
+`
+
+type ListVotesForMealParams struct {
+	MealID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+type ListVotesForMealRow struct {
+	MealID   uuid.UUID
+	MemberID uuid.UUID
+	Vote     int16
+	Name     string
+	Email    string
+}
+
+func (q *Queries) ListVotesForMeal(ctx context.Context, arg ListVotesForMealParams) ([]ListVotesForMealRow, error) {
+	rows, err := q.db.Query(ctx, listVotesForMeal, arg.MealID, arg.HouseholdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListVotesForMealRow{}
+	for rows.Next() {
+		var i ListVotesForMealRow
+		if err := rows.Scan(
+			&i.MealID,
+			&i.MemberID,
+			&i.Vote,
+			&i.Name,
+			&i.Email,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVotesForPlan = `-- name: ListVotesForPlan :many
+SELECT v.meal_id, v.member_id, v.vote, mb.name, mb.email
+FROM meal_votes v
+JOIN meals m ON m.id = v.meal_id AND m.household_id = v.household_id
+JOIN members mb ON mb.id = v.member_id
+WHERE m.plan_id = $1 AND v.household_id = $2
+ORDER BY v.updated_at
+`
+
+type ListVotesForPlanParams struct {
+	PlanID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+type ListVotesForPlanRow struct {
+	MealID   uuid.UUID
+	MemberID uuid.UUID
+	Vote     int16
+	Name     string
+	Email    string
+}
+
+func (q *Queries) ListVotesForPlan(ctx context.Context, arg ListVotesForPlanParams) ([]ListVotesForPlanRow, error) {
+	rows, err := q.db.Query(ctx, listVotesForPlan, arg.PlanID, arg.HouseholdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListVotesForPlanRow{}
+	for rows.Next() {
+		var i ListVotesForPlanRow
+		if err := rows.Scan(
+			&i.MealID,
+			&i.MemberID,
+			&i.Vote,
+			&i.Name,
+			&i.Email,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockPlan = `-- name: LockPlan :one
+SELECT id, household_id, week_start, status, prompt, created_by, created_at, confirmed_by, confirmed_at, auto_confirmed, confirm_note FROM plans WHERE id = $1 AND household_id = $2 FOR UPDATE
+`
+
+type LockPlanParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) LockPlan(ctx context.Context, arg LockPlanParams) (Plan, error) {
+	row := q.db.QueryRow(ctx, lockPlan, arg.ID, arg.HouseholdID)
+	var i Plan
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.WeekStart,
+		&i.Status,
+		&i.Prompt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ConfirmedBy,
+		&i.ConfirmedAt,
+		&i.AutoConfirmed,
+		&i.ConfirmNote,
+	)
+	return i, err
+}
+
+const maxMealPosition = `-- name: MaxMealPosition :one
+SELECT coalesce(max(position), -1)::int FROM meals WHERE plan_id = $1 AND household_id = $2
+`
+
+type MaxMealPositionParams struct {
+	PlanID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) MaxMealPosition(ctx context.Context, arg MaxMealPositionParams) (int32, error) {
+	row := q.db.QueryRow(ctx, maxMealPosition, arg.PlanID, arg.HouseholdID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const replaceMealContent = `-- name: ReplaceMealContent :execrows
+UPDATE meals SET day = $3, title = $4, protein = $5, minutes = $6, one_pot = $7, servings = $8,
+    after_baby_portion = $9, added_from = 'claude', recipe_id = NULL
+WHERE id = $1 AND household_id = $2
+`
+
+type ReplaceMealContentParams struct {
+	ID               uuid.UUID
+	HouseholdID      uuid.UUID
+	Day              pgtype.Text
+	Title            string
+	Protein          string
+	Minutes          int32
+	OnePot           bool
+	Servings         int32
+	AfterBabyPortion []string
+}
+
+// A swap keeps the meal's id, type and position; ingredients, steps and
+// votes are deleted and inserted again by the caller.
+func (q *Queries) ReplaceMealContent(ctx context.Context, arg ReplaceMealContentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replaceMealContent,
+		arg.ID,
+		arg.HouseholdID,
+		arg.Day,
+		arg.Title,
+		arg.Protein,
+		arg.Minutes,
+		arg.OnePot,
+		arg.Servings,
+		arg.AfterBabyPortion,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setMealPosition = `-- name: SetMealPosition :exec
+UPDATE meals SET position = $3 WHERE id = $1 AND household_id = $2
+`
+
+type SetMealPositionParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+	Position    int32
+}
+
+func (q *Queries) SetMealPosition(ctx context.Context, arg SetMealPositionParams) error {
+	_, err := q.db.Exec(ctx, setMealPosition, arg.ID, arg.HouseholdID, arg.Position)
+	return err
+}
+
 const updateIngredient = `-- name: UpdateIngredient :execrows
 UPDATE ingredients SET name = $3, normalized_name = $4, qty = $5, unit = $6, section = $7
 WHERE id = $1 AND household_id = $2
@@ -485,4 +966,26 @@ func (q *Queries) UpdateIngredient(ctx context.Context, arg UpdateIngredientPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const upsertVote = `-- name: UpsertVote :exec
+INSERT INTO meal_votes (household_id, meal_id, member_id, vote) VALUES ($1, $2, $3, $4)
+ON CONFLICT (meal_id, member_id) DO UPDATE SET vote = EXCLUDED.vote, updated_at = now()
+`
+
+type UpsertVoteParams struct {
+	HouseholdID uuid.UUID
+	MealID      uuid.UUID
+	MemberID    uuid.UUID
+	Vote        int16
+}
+
+func (q *Queries) UpsertVote(ctx context.Context, arg UpsertVoteParams) error {
+	_, err := q.db.Exec(ctx, upsertVote,
+		arg.HouseholdID,
+		arg.MealID,
+		arg.MemberID,
+		arg.Vote,
+	)
+	return err
 }

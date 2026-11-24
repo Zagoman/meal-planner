@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // household time zones in a distroless image
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/Zagoman/meal-planner/internal/database"
 	"github.com/Zagoman/meal-planner/internal/events"
 	"github.com/Zagoman/meal-planner/internal/household"
+	"github.com/Zagoman/meal-planner/internal/jobs"
 	"github.com/Zagoman/meal-planner/internal/planner"
 	"github.com/Zagoman/meal-planner/internal/server"
 	"github.com/Zagoman/meal-planner/internal/service"
@@ -84,7 +86,16 @@ func run() error {
 		slog.Warn("ANTHROPIC_API_KEY is not set: plan generation is disabled")
 	}
 	services.Lists = shopping.New(pool, hub)
-	services.Plans = planner.New(pool, claudeClient, hub, planner.Options{Timeout: cfg.GenerateTimeout})
+	worker := jobs.NewWorker(pool, jobs.Options{Timeout: cfg.GenerateTimeout + 30*time.Second})
+	plans := planner.New(pool, claudeClient, hub, planner.Options{Timeout: cfg.GenerateTimeout, Wake: worker.Wake})
+	plans.RegisterJobs(worker)
+	services.Plans = plans
+	services.Drafts = plans
+
+	// Background jobs (every Claude call of the review flow) and the weekly
+	// schedules run inside this process.
+	go worker.Run(ctx)
+	go plans.RunSchedules(ctx)
 
 	deps := app.Deps{
 		Config:   cfg,

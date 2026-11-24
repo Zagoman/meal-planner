@@ -40,7 +40,9 @@ const feedbackWindow = 8 * 7 * 24 * time.Hour
 // Options tune the service; zero values get defaults.
 type Options struct {
 	// Timeout bounds a whole Generate or SwapMeal (Config.GenerateTimeout).
-	Timeout   time.Duration
+	Timeout time.Duration
+	// Wake, when set, is called after a job is queued (jobs.Worker.Wake).
+	Wake      func()
 	MaxTokens int
 	Now       func() time.Time
 	Logger    *slog.Logger
@@ -103,32 +105,36 @@ func (s *Service) Generate(ctx context.Context, sc domain.Scope, prompt string) 
 		return domain.Plan{}, err
 	}
 
-	draft, err := s.saveDraft(ctx, sc, prompt, mp)
-	if err != nil {
-		return domain.Plan{}, fmt.Errorf("%w: save draft: %w", domain.ErrGeneration, err)
-	}
+	// The answer is valid: archive the old plan, save the new one and build
+	// its list in one transaction, so a failure leaves the old plan active.
+	var plan db.Plan
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		qt := q.WithTx(tx)
 		if err := qt.ArchiveActivePlan(ctx, sc.HouseholdID); err != nil {
 			return fmt.Errorf("archive active plan: %w", err)
 		}
-		n, err := qt.ActivatePlan(ctx, db.ActivatePlanParams{ID: draft.ID, HouseholdID: sc.HouseholdID})
+		var err error
+		plan, err = qt.CreateActivePlan(ctx, db.CreateActivePlanParams{
+			HouseholdID: sc.HouseholdID,
+			WeekStart:   WeekStart(s.opts.Now()),
+			Prompt:      prompt,
+			CreatedBy:   memberRef(sc),
+		})
 		if err != nil {
-			return fmt.Errorf("activate plan: %w", err)
+			return fmt.Errorf("create plan: %w", err)
 		}
-		if n != 1 {
-			return errors.New("activate plan: draft not found")
+		for i, m := range mp.Meals {
+			if _, err := insertMeal(ctx, qt, sc.HouseholdID, plan.ID, i, m); err != nil {
+				return err
+			}
 		}
-		return shopping.RebuildItems(ctx, qt, sc.HouseholdID, draft.ID)
+		return shopping.RebuildItems(ctx, qt, sc.HouseholdID, plan.ID)
 	})
 	if err != nil {
-		if derr := q.DeleteDraftPlan(context.WithoutCancel(ctx), db.DeleteDraftPlanParams{ID: draft.ID, HouseholdID: sc.HouseholdID}); derr != nil {
-			s.opts.Logger.Error("delete draft plan", "household_id", sc.HouseholdID, "plan_id", draft.ID, "err", derr)
-		}
-		return domain.Plan{}, fmt.Errorf("%w: activate plan: %w", domain.ErrGeneration, err)
+		return domain.Plan{}, fmt.Errorf("%w: save plan: %w", domain.ErrGeneration, err)
 	}
 	s.publish(sc.HouseholdID)
-	return s.loadPlan(context.WithoutCancel(ctx), q, sc.HouseholdID, draft.ID)
+	return s.loadPlan(context.WithoutCancel(ctx), q, sc.HouseholdID, plan.ID)
 }
 
 // Current returns the active plan with meals, ingredients and steps.
@@ -361,32 +367,6 @@ func (s *Service) publish(householdID uuid.UUID) {
 	}
 }
 
-// saveDraft stores the plan as a draft with all meals in one transaction, so
-// a failure leaves nothing behind.
-func (s *Service) saveDraft(ctx context.Context, sc domain.Scope, prompt string, mp domain.MealPlanJSON) (db.Plan, error) {
-	var draft db.Plan
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		qt := db.New(tx)
-		var err error
-		draft, err = qt.CreatePlan(ctx, db.CreatePlanParams{
-			HouseholdID: sc.HouseholdID,
-			WeekStart:   WeekStart(s.opts.Now()),
-			Prompt:      prompt,
-			CreatedBy:   uuid.NullUUID{UUID: sc.MemberID, Valid: sc.MemberID != uuid.Nil},
-		})
-		if err != nil {
-			return fmt.Errorf("create plan: %w", err)
-		}
-		for i, m := range mp.Meals {
-			if _, err := insertMeal(ctx, qt, sc.HouseholdID, draft.ID, i, m); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	return draft, err
-}
-
 func insertMeal(ctx context.Context, q *db.Queries, householdID, planID uuid.UUID, position int, m domain.MealJSON) (db.Meal, error) {
 	after := m.AfterBabyPortion
 	if after == nil {
@@ -405,6 +385,44 @@ func insertMeal(ctx context.Context, q *db.Queries, householdID, planID uuid.UUI
 	if err != nil {
 		return db.Meal{}, fmt.Errorf("create meal: %w", err)
 	}
+	return meal, insertMealParts(ctx, q, householdID, meal.ID, m)
+}
+
+// replaceMeal gives an existing meal new content from Claude, keeping its
+// id, type and position; its votes are cleared.
+func replaceMeal(ctx context.Context, q *db.Queries, householdID, mealID uuid.UUID, m domain.MealJSON) error {
+	after := m.AfterBabyPortion
+	if after == nil {
+		after = []string{}
+	}
+	var day pgtype.Text
+	if m.Day != nil {
+		day = pgtype.Text{String: string(*m.Day), Valid: true}
+	}
+	n, err := q.ReplaceMealContent(ctx, db.ReplaceMealContentParams{
+		ID: mealID, HouseholdID: householdID, Day: day, Title: m.Title, Protein: string(m.Protein),
+		Minutes: clamp32(m.Minutes), OnePot: m.OnePot, Servings: clamp32(m.Servings), AfterBabyPortion: after,
+	})
+	if err != nil {
+		return fmt.Errorf("replace meal: %w", err)
+	}
+	if n != 1 {
+		return fmt.Errorf("replace meal: %w", domain.ErrNotFound)
+	}
+	ref := db.DeleteIngredientsForMealParams{MealID: mealID, HouseholdID: householdID}
+	if err := q.DeleteIngredientsForMeal(ctx, ref); err != nil {
+		return fmt.Errorf("delete ingredients: %w", err)
+	}
+	if err := q.DeleteStepsForMeal(ctx, db.DeleteStepsForMealParams(ref)); err != nil {
+		return fmt.Errorf("delete steps: %w", err)
+	}
+	if err := q.DeleteVotesForMeal(ctx, db.DeleteVotesForMealParams(ref)); err != nil {
+		return fmt.Errorf("delete votes: %w", err)
+	}
+	return insertMealParts(ctx, q, householdID, mealID, m)
+}
+
+func insertMealParts(ctx context.Context, q *db.Queries, householdID, mealID uuid.UUID, m domain.MealJSON) error {
 	for i, ing := range m.Ingredients {
 		if shopping.IsWater(ing.NormalizedName) || shopping.IsWater(ing.Name) {
 			continue // water is never bought
@@ -414,10 +432,10 @@ func insertMeal(ctx context.Context, q *db.Queries, householdID, planID uuid.UUI
 			norm = shopping.Normalize(ing.Name)
 		}
 		if err := q.CreateIngredient(ctx, db.CreateIngredientParams{
-			HouseholdID: householdID, MealID: meal.ID, Position: clamp32(i), Name: ing.Name,
+			HouseholdID: householdID, MealID: mealID, Position: clamp32(i), Name: ing.Name,
 			NormalizedName: norm, Qty: ing.Qty, Unit: ing.Unit, Section: ing.Section,
 		}); err != nil {
-			return db.Meal{}, fmt.Errorf("create ingredient: %w", err)
+			return fmt.Errorf("create ingredient: %w", err)
 		}
 	}
 	for i, st := range m.Steps {
@@ -427,13 +445,17 @@ func insertMeal(ctx context.Context, q *db.Queries, householdID, planID uuid.UUI
 			timer = &t
 		}
 		if err := q.CreateStep(ctx, db.CreateStepParams{
-			HouseholdID: householdID, MealID: meal.ID, Position: clamp32(i), Text: st.Text,
+			HouseholdID: householdID, MealID: mealID, Position: clamp32(i), Text: st.Text,
 			TimerMin: timer, BabyPortion: st.BabyPortion,
 		}); err != nil {
-			return db.Meal{}, fmt.Errorf("create step: %w", err)
+			return fmt.Errorf("create step: %w", err)
 		}
 	}
-	return meal, nil
+	return nil
+}
+
+func memberRef(sc domain.Scope) uuid.NullUUID {
+	return uuid.NullUUID{UUID: sc.MemberID, Valid: sc.MemberID != uuid.Nil}
 }
 
 func (s *Service) loadPlan(ctx context.Context, q *db.Queries, householdID, planID uuid.UUID) (domain.Plan, error) {
@@ -447,7 +469,8 @@ func (s *Service) loadPlan(ctx context.Context, q *db.Queries, householdID, plan
 	}
 	plan := domain.Plan{
 		ID: p.ID, WeekStart: p.WeekStart, Status: domain.PlanStatus(p.Status), Prompt: p.Prompt,
-		CreatedAt: p.CreatedAt, Meals: make([]domain.Meal, 0, len(rows)),
+		CreatedAt: p.CreatedAt, ConfirmedAt: p.ConfirmedAt, AutoConfirmed: p.AutoConfirmed,
+		ConfirmNote: p.ConfirmNote, Meals: make([]domain.Meal, 0, len(rows)),
 	}
 	for _, r := range rows {
 		m, err := loadMeal(ctx, q, r)
@@ -548,7 +571,7 @@ func ProfileFromDB(p db.Profile) domain.Profile {
 	out := domain.Profile{
 		People:     int(p.People),
 		SpiceLevel: domain.SpiceLevel(p.SpiceLevel), OnePot: p.OnePot, Avoid: []string{}, Shop: p.Shop,
-		ShoppingDay: domain.Weekday(p.ShoppingDay), AutoConfirmTime: ClockText(p.AutoConfirmTime),
+		ShoppingDay: domain.Weekday(p.ShoppingDay), AutoConfirmTime: ClockText(p.AutoConfirmTime), TimeZone: p.TimeZone,
 		BabyPortions: p.BabyPortions, Language: p.Language,
 	}
 	if len(p.ProteinMix) > 0 {

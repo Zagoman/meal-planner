@@ -41,6 +41,36 @@ type Plans interface {
 	Meal(ctx context.Context, s domain.Scope, mealID uuid.UUID) (domain.Meal, error)
 }
 
+// Drafts is next week's plan before it is confirmed: making it, reviewing
+// it together (votes, swaps, Ask Claude) and confirming it. Every Claude
+// call is queued as a job and returns at once; the result arrives as an
+// events.Event. A failed job never changes existing data.
+type Drafts interface {
+	// Card is the state of the Week page's draft card.
+	Card(ctx context.Context, s domain.Scope) (domain.DraftCard, error)
+	// RequestDraft queues a draft job for the next shopping day. An existing
+	// draft for that week is replaced once the new one is valid.
+	RequestDraft(ctx context.Context, s domain.Scope) (domain.Job, error)
+	// Review returns the newest draft with votes; domain.ErrNotFound if none.
+	Review(ctx context.Context, s domain.Scope) (domain.Review, error)
+	// DraftMeal returns one meal of the draft with its votes.
+	DraftMeal(ctx context.Context, s domain.Scope, mealID uuid.UUID) (domain.DraftMeal, error)
+	// Vote sets the caller's vote on a draft meal: +1, -1, or 0 to clear it.
+	Vote(ctx context.Context, s domain.Scope, mealID uuid.UUID, vote int) (domain.DraftMeal, error)
+	// RequestSwap queues a swap job for one draft meal.
+	RequestSwap(ctx context.Context, s domain.Scope, mealID uuid.UUID) (domain.DraftMeal, error)
+	// RemoveMeal deletes a meal from the draft.
+	RemoveMeal(ctx context.Context, s domain.Scope, mealID uuid.UUID) error
+	// RequestAsk queues an Ask Claude job: Claude returns the whole meal set
+	// and the server applies the difference to the draft.
+	RequestAsk(ctx context.Context, s domain.Scope, prompt string) (domain.Job, error)
+	// ListPreview is the shopping list the draft would make. Never stored.
+	ListPreview(ctx context.Context, s domain.Scope) (domain.List, error)
+	// Confirm makes the draft the active plan and builds its list. It is
+	// idempotent: a second confirm of the same draft returns the plan.
+	Confirm(ctx context.Context, s domain.Scope) (domain.Plan, error)
+}
+
 // Lists is the shopping list of the active plan.
 type Lists interface {
 	Active(ctx context.Context, s domain.Scope) (domain.List, error)
@@ -112,6 +142,7 @@ type Services struct {
 	Households Households
 	Profiles   Profiles
 	Plans      Plans
+	Drafts     Drafts
 	Lists      Lists
 	Feedback   Feedback
 }

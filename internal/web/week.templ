@@ -6,67 +6,28 @@ import (
 	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
-templ WeekPage(p domain.Plan, hasPlan bool) {
+// WeekPage is this week's confirmed plan with the draft card for next
+// week on top. Both refresh over SSE (/events).
+templ WeekPage(p domain.Plan, hasPlan bool, card domain.DraftCard) {
 	@Layout("This week", TabWeek) {
-		@WeekBody(p, hasPlan)
-		@GenerateForm(hasPlan)
+		<div hx-ext="sse" sse-connect="/events">
+			@DraftCard(card)
+			@WeekBody(p, hasPlan)
+		</div>
 	}
 }
 
-// GenerateForm posts the prompt. While the request runs (up to a minute),
-// #gen-progress is shown with an elapsed-seconds counter (app.js). On
-// failure the server answers with a flash message and #week, the current
-// plan, is left as it was. With a plan it is folded away; window 2 replaces
-// it with the draft card.
-templ GenerateForm(hasPlan bool) {
-	<details class="card generate-box" open?={ !hasPlan }>
-		<summary>
-			if hasPlan {
-				Make a new plan
-			} else {
-				Plan the week
-			}
-		</summary>
-		<form
-			id="generate"
-			class="generate stack"
-			action="/week/generate"
-			method="post"
-			hx-post="/week/generate"
-			hx-target="#week"
-			hx-swap="outerHTML"
-			hx-indicator="#gen-progress"
-			hx-disabled-elt="find button, find textarea"
-		>
-			<label for="prompt">Anything special this week? (optional)</label>
-			<textarea id="prompt" name="prompt" rows="3" maxlength="2000" placeholder="E.g. quick dinners, fish twice, something special on Saturday"></textarea>
-			<p class="muted small">The number of meals of each type comes from your <a href="/profile">profile</a>.</p>
-			<button type="submit" class="primary">
-				if hasPlan {
-					Replace this week's plan
-				} else {
-					Plan the week
-				}
-			</button>
-			<div id="gen-progress" class="htmx-indicator gen-progress" role="status">
-				<span class="spinner" aria-hidden="true"></span>
-				Planning meals… <span data-elapsed>0</span> s
-				<span class="muted small">This can take up to a minute. Your current plan stays until the new one is ready.</span>
-			</div>
-		</form>
-	</details>
-}
-
 templ WeekBody(p domain.Plan, hasPlan bool) {
-	<div id="week">
+	<div id="week" hx-get="/week" hx-select="#week" hx-trigger="sse:plan.updated" hx-swap="outerHTML">
 		if !hasPlan {
-			<p class="empty muted">No plan yet.</p>
+			<p class="empty muted">No plan for this week yet.</p>
 		} else {
+			@ConfirmNote(p)
 			<p class="muted small sub">{ mealCount(len(p.Meals)) } · cook them in any order</p>
 			<h2 class="sec-label">This week's meals</h2>
 			<div id="week-meals" class="meals">
 				for _, m := range p.Meals {
-					@MealCard(p.ID, m)
+					@MealCard(m)
 				}
 			</div>
 			<p class="muted small">Days are only suggestions.</p>
@@ -74,7 +35,7 @@ templ WeekBody(p domain.Plan, hasPlan bool) {
 	</div>
 }
 
-templ MealCard(planID uuid.UUID, m domain.Meal) {
+templ MealCard(m domain.Meal) {
 	<article class="meal card" id={ "meal-" + m.ID.String() }>
 		<a class="meal-link" href={ templ.SafeURL("/meals/" + m.ID.String()) }>
 			<span class="meal-text">
@@ -83,26 +44,6 @@ templ MealCard(planID uuid.UUID, m domain.Meal) {
 			</span>
 			<span class="meal-go">Recipe</span>
 		</a>
-		if m.MealType == domain.MealDinner && m.Day != "" {
-			<details class="swap">
-				<summary>Swap</summary>
-				<form
-					action="/week/swap"
-					method="post"
-					hx-post="/week/swap"
-					hx-target="closest article"
-					hx-swap="outerHTML"
-					hx-disabled-elt="find button"
-				>
-					<input type="hidden" name="plan_id" value={ planID.String() }/>
-					<input type="hidden" name="day" value={ string(m.Day) }/>
-					<label class="visually-hidden" for={ "swap-" + m.ID.String() }>What instead?</label>
-					<input id={ "swap-" + m.ID.String() } name="prompt" maxlength="500" placeholder="What instead? (optional)"/>
-					<button type="submit">Swap meal</button>
-					<span class="htmx-indicator muted small">Finding another meal…</span>
-				</form>
-			</details>
-		}
 	</article>
 }
 

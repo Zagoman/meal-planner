@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"github.com/google/uuid"
 
 	"github.com/Zagoman/meal-planner/internal/domain"
 )
@@ -132,4 +133,55 @@ func extraAfterBaby(m domain.Meal) []string {
 		}
 	}
 	return out
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// voteText is " · liked by you and Ben · disliked by Anna".
+func voteText(m domain.DraftMeal, me uuid.UUID) string {
+	var up, down []string
+	for _, v := range m.Votes {
+		name := v.Name
+		if v.MemberID == me {
+			name = "you"
+		}
+		if v.Vote > 0 {
+			up = append(up, name)
+		} else {
+			down = append(down, name)
+		}
+	}
+	out := ""
+	if len(up) > 0 {
+		out += " · liked by " + joinNames(up)
+	}
+	if len(down) > 0 {
+		out += " · disliked by " + joinNames(down)
+	}
+	return out
+}
+
+func joinNames(n []string) string {
+	if len(n) <= 1 {
+		return strings.Join(n, "")
+	}
+	return strings.Join(n[:len(n)-1], ", ") + " and " + n[len(n)-1]
+}
+
+// previewCount is every item of a list preview, Check at home included.
+func previewCount(l domain.List) int {
+	n := len(l.CheckHome)
+	for _, s := range l.Sections {
+		for _, it := range s.Items {
+			if !it.CheckHome {
+				n++
+			}
+		}
+	}
+	return n
 }

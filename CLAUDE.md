@@ -97,12 +97,21 @@ new files (`00003_...sql`), never edits to an applied one.
   Ticks survive a rebuild: generated items are upserted by
   `(plan_id, normalized_name)` (`UpsertGeneratedListItem`) and stale ones
   removed with `DeleteStaleGeneratedListItems`; manual items are never touched.
+- Every Claude call from the web UI runs as a job (`internal/jobs`, handlers
+  in `planner.RegisterJobs`): the request queues it and returns, the result
+  arrives as an `events.Event`, a failed job changes no data. Handlers must
+  be idempotent (crash retries; scheduled jobs use a dedupe key). Drafts:
+  `service.Drafts`; schedules: `planner.Tick` in the household time zone.
+- SSE: `GET /events` sends per-partial events (`list.item`, `meal.updated`,
+  `meal-<id>`, `plan.updated`, `job.failed`); pages refetch the partial
+  with `hx-trigger="sse:<name>"`. Every partial has a stable id.
 - Claude returns meals only (schema: `internal/domain/meal_plan.schema.json`,
   structs `domain.MealPlanJSON`). The server builds the list. Validate:
   schema, meal count per type equals `meal_targets`, `one_pot` when the
   profile requires it (not for baking), no avoid-list ingredient,
   baby-portion step before salt/stock/cheese (not for baking). Retry once with the problems
-  named, then fail. Log usage with `InsertUsage` (kind `plan`, `swap`, `retry`).
+  named, then fail. Log usage with `InsertUsage` (kind `plan`, `swap`, `ask`,
+  `auto_confirm`, `retry`).
 - Tests: `testutil.NewDB(t)` gives each test its own migrated database
   (cloned from a template, fast, safe with `t.Parallel()`).
   `testutil.NewHousehold(t, pool, name)` returns an admin `Scope`.

@@ -106,10 +106,23 @@ func Routes(d app.Deps) http.Handler {
 		r.Post("/list/items/{id}/home", h.haveItem)
 		r.Post("/list/items/{id}/delete", h.deleteItem)
 
+		r.Get("/events", h.eventStream)
 		r.Get("/week", h.weekPage)
-		r.Post("/week/generate", h.generate)
-		r.Post("/week/swap", h.swap)
 		r.Get("/meals/{id}", h.mealPage)
+
+		// Next week's draft: card, review, votes, swaps, Ask Claude, confirm.
+		r.Get("/plans/next", h.reviewPage)
+		r.Get("/plans/next/card", h.draftCard)
+		r.Post("/plans/next/generate", h.makeDraft)
+		r.Get("/plans/next/meals", h.draftMeals)
+		r.Post("/plans/next/ask", h.ask)
+		r.Get("/plans/next/list-preview", h.listPreview)
+		r.Post("/plans/next/confirm", h.confirm)
+		r.Get("/meals/{id}/card", h.renderMealCard)
+		r.Post("/meals/{id}/vote", h.vote)
+		r.Post("/meals/{id}/swap", h.swapDraftMeal)
+		r.Delete("/meals/{id}", h.removeDraftMeal)
+		r.Post("/meals/{id}/delete", h.removeDraftMeal) // without JavaScript
 		r.Post("/meals/{id}/rate", h.rate)
 
 		r.Get("/recipes", h.recipesPage)

@@ -38,6 +38,20 @@ const htmxConfig = `{"responseHandling":[{"code":"204","swap":false},{"code":"[2
 // Layout is the base page: htmx + SSE extension, PWA manifest, service
 // worker, bottom navigation. Pages render their content as children.
 templ Layout(title string, active Tab) {
+	@page(title, active, "", "", active != TabNone) {
+		{ children... }
+	}
+}
+
+// FullLayout is a full-screen flow (review, rating, cook mode, ...): no tab
+// bar, a back link above the title.
+templ FullLayout(title, back, backLabel string) {
+	@page(title, tabOther, back, backLabel, false) {
+		{ children... }
+	}
+}
+
+templ page(title string, active Tab, back, backLabel string, showNav bool) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
@@ -54,7 +68,10 @@ templ Layout(title string, active Tab) {
 			<script src="/static/htmx-ext-sse.js" defer></script>
 			<script src="/static/app.js" defer></script>
 		</head>
-		<body hx-boost="true" data-signed-in?={ active != TabNone }>
+		<body hx-boost="true" data-signed-in?={ active != TabNone } class={ templ.KV("full", !showNav && active != TabNone) }>
+			if back != "" {
+				<nav class="back"><a href={ templ.SafeURL(back) }>‹ { backLabel }</a></nav>
+			}
 			<header class="top">
 				<h1>{ title }</h1>
 				<span id="offline-badge" class="badge offline" hidden>Offline</span>
@@ -63,7 +80,7 @@ templ Layout(title string, active Tab) {
 			<main id="main">
 				{ children... }
 			</main>
-			if active != TabNone {
+			if showNav {
 				<nav class="tabs" aria-label="Main">
 					for _, n := range nav {
 						<a
