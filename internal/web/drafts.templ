@@ -26,8 +26,19 @@ templ DraftCard(c domain.DraftCard) {
 					<span class="draft-title">Next week is ready</span>
 					<span class="badge draft">Draft</span>
 				</div>
-				<p class="small muted">Review { mealCount(c.MealCount) } together. Confirms itself { c.ConfirmsAt.Format("Mon 15:04") }.</p>
-				<a class="button primary" href="/plans/next">Start review</a>
+				<p class="small muted">
+					if c.RateFirst {
+						Rate this week, then review { mealCount(c.MealCount) } together.
+					} else {
+						Review { mealCount(c.MealCount) } together.
+					}
+					Confirms itself { c.ConfirmsAt.Format("Mon 15:04") }.
+				</p>
+				if c.RateFirst {
+					<a class="button primary" href="/plans/current/rate">Start review</a>
+				} else {
+					<a class="button primary" href="/plans/next">Start review</a>
+				}
 			case domain.DraftFailed:
 				<p class="draft-title">Couldn't make the plan.</p>
 				<p class="small muted">Your current plan is unchanged.</p>
@@ -62,6 +73,7 @@ templ ReviewPage(r domain.Review, me uuid.UUID, preview domain.List) {
 			</p>
 			@AskForm()
 			@DraftMeals(r, me)
+			@NotCookedSection(r.NotCooked, false)
 			<div class="review-foot">
 				@ListPreviewLink(preview)
 				<form action="/plans/next/confirm" method="post">

@@ -343,7 +343,8 @@ func TestDraftReviewFlow(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("generate: %d %s", rec.Code, rec.Body)
 	}
-	mustContain(t, "card", rec.Body.String(), `data-state="ready"`, "Next week is ready", `href="/plans/next"`)
+	// This week is not rated yet, so the review starts with the rating step.
+	mustContain(t, "card", rec.Body.String(), `data-state="ready"`, "Next week is ready", `href="/plans/current/rate"`, "Rate this week, then review")
 	if p, _ := f.store.Current(context.Background(), f.seed.Anna); p.ID != before.ID {
 		t.Error("a draft replaced this week's plan")
 	}
@@ -447,6 +448,92 @@ func TestDraftReviewFlow(t *testing.T) {
 	// The review's meal list partial now sends the page to the week.
 	if rec = f.do(t, req{path: "/plans/next/meals", session: anna, hx: true}); rec.Header().Get("HX-Redirect") != "/week" {
 		t.Errorf("meals after confirm: %d %q", rec.Code, rec.Header().Get("HX-Redirect"))
+	}
+}
+
+func TestRateAddBackAndLibrary(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	anna, carl := f.session(f.seed.Anna), f.session(f.seed.Carl)
+	ctx := context.Background()
+	p := f.seed.HomePlan
+
+	// P2: every meal of this week, full screen, progress.
+	rec := f.do(t, req{path: "/plans/current/rate", session: anna})
+	mustContain(t, "rate page", rec.Body.String(), "How was this week?", `id="rate-progress"`, "0 of 5 done",
+		`id="outcome-`+p.Meals[0].ID.String()+`"`, "Not cooked")
+	if strings.Contains(rec.Body.String(), `class="tabs"`) {
+		t.Error("rate page shows the tab bar")
+	}
+	// Rate one, mark one not cooked: the card and the progress (out of band).
+	rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[0].ID.String() + "/outcome", form: url.Values{"rating": {"4"}}, session: anna, hx: true})
+	mustContain(t, "rated", rec.Body.String(), `aria-pressed="true" aria-label="4 of 5"`, `hx-swap-oob="true"`, "1 of 5 done", "Add a note")
+	rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[0].ID.String() + "/outcome", form: url.Values{"note": {"baby loved it"}}, session: anna, hx: true})
+	mustContain(t, "note", rec.Body.String(), "“baby loved it”")
+	rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[1].ID.String() + "/outcome", form: url.Values{"not_cooked": {"1"}}, session: anna, hx: true})
+	mustContain(t, "not cooked", rec.Body.String(), "add it back at the end of the review", "2 of 5 done")
+	if rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[2].ID.String() + "/outcome", form: url.Values{"rating": {"7"}}, session: anna, hx: true}); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("rating 7: %d", rec.Code)
+	}
+	if rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[2].ID.String() + "/outcome", form: url.Values{"rating": {"2"}}, session: carl, hx: true}); rec.Code != http.StatusNotFound {
+		t.Errorf("other household rates: %d", rec.Code)
+	}
+
+	// The review lists the not-cooked meal; Add back moves it into the draft.
+	if _, err := f.store.RequestDraft(ctx, f.seed.Anna); err != nil {
+		t.Fatal(err)
+	}
+	rec = f.do(t, req{path: "/plans/next", session: anna})
+	mustContain(t, "review", rec.Body.String(), "Not cooked last week", p.Meals[1].Title, ">Add back<")
+	nc, _ := f.store.Review(ctx, f.seed.Anna)
+	rec = f.do(t, req{method: "POST", path: "/plans/next/meals", form: url.Values{"recipe_id": {nc.NotCooked[0].RecipeID.String()}, "from": {"not_cooked"}}, session: anna, hx: true})
+	body := rec.Body.String()
+	mustContain(t, "add back", body, `id="draft-meals"`, p.Meals[1].Title, `id="not-cooked"`)
+	if strings.Contains(body, ">Add back<") {
+		t.Error("meal still listed as not cooked after adding it back")
+	}
+
+	// L1: the library, a search partial for htmx, filters.
+	rec = f.do(t, req{path: "/recipes", session: anna})
+	mustContain(t, "library", rec.Body.String(), `id="recipe-results"`, `name="q"`, "Rated 4+", "Our own", p.Meals[0].Title, "rated 4")
+	rec = f.do(t, req{path: "/recipes?q=" + url.QueryEscape(strings.Fields(p.Meals[0].Title)[0]), session: anna, hx: true})
+	if b := rec.Body.String(); !strings.HasPrefix(b, `<div id="recipe-results"`) || !strings.Contains(b, p.Meals[0].Title) {
+		t.Errorf("search partial: %s", b[:min(200, len(b))])
+	}
+	if rec = f.do(t, req{path: "/recipes?filter=dessert", session: anna}); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("bad filter: %d", rec.Code)
+	}
+
+	// L4: a recipe; tweak; add to this week (toast).
+	lib, _ := f.store.Search(ctx, f.seed.Anna, p.Meals[0].Title, domain.FilterAll)
+	id := lib[0].ID.String()
+	rec = f.do(t, req{path: "/recipes/" + id, session: anna})
+	mustContain(t, "recipe", rec.Body.String(), "‹ Recipes", "Rated 4 · cooked 1×", "Your note: “baby loved it”",
+		`id="tweak"`, `hx-trigger="sse:recipe-`+id+`"`, "Add to next week", "Add to this week", `class="tabs"`)
+	rec = f.do(t, req{method: "POST", path: "/recipes/" + id + "/tweak", form: url.Values{"prompt": {"more veg"}}, session: anna, hx: true})
+	mustContain(t, "tweak", rec.Body.String(), `id="tweak"`, "New version saved")
+	rec = f.do(t, req{method: "POST", path: "/recipes/" + id + "/add-this", session: anna, hx: true})
+	if rec.Header().Get("HX-Retarget") != "#flash" || !strings.Contains(rec.Body.String(), "this week") {
+		t.Errorf("add to this week: %q %s", rec.Header().Get("HX-Retarget"), rec.Body)
+	}
+	rec = f.do(t, req{method: "POST", path: "/recipes/" + id + "/add-next", session: anna, hx: true})
+	mustContain(t, "add next", rec.Body.String(), "Added to next week")
+
+	// Another household: 404 for the recipe and its actions.
+	for _, c := range []req{
+		{path: "/recipes/" + id},
+		{path: "/recipes/" + id + "/tweak", hx: true},
+		{method: "POST", path: "/recipes/" + id + "/tweak", form: url.Values{"prompt": {"x"}}, hx: true},
+		{method: "POST", path: "/recipes/" + id + "/add-next", hx: true},
+		{method: "POST", path: "/recipes/" + id + "/add-this", hx: true},
+	} {
+		c.session = carl
+		if rec = f.do(t, c); rec.Code != http.StatusNotFound {
+			t.Errorf("%s %s as other household: %d", c.method, c.path, rec.Code)
+		}
+	}
+	if rec = f.do(t, req{path: "/recipes?q=" + url.QueryEscape(p.Meals[0].Title), session: carl, hx: true}); strings.Contains(rec.Body.String(), id) {
+		t.Error("other household's library shows the recipe")
 	}
 }
 

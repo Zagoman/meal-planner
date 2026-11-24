@@ -2,7 +2,9 @@ package web
 
 import (
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/a-h/templ"
@@ -184,4 +186,31 @@ func previewCount(l domain.List) int {
 		}
 	}
 	return n
+}
+
+// statsLine is "Rated 4.5 · cooked 3×" or "Not cooked yet".
+func statsLine(s domain.RecipeStats) string {
+	switch {
+	case s.Ratings > 0:
+		return fmt.Sprintf("Rated %s · cooked %d×", ratingText(s.Rating), s.TimesCooked)
+	case s.TimesCooked > 0:
+		return fmt.Sprintf("Cooked %d×", s.TimesCooked)
+	}
+	return "Not cooked yet"
+}
+
+// recipeLine is "Dinner · rated 5 · cooked 3×".
+func recipeLine(t domain.MealType, s domain.RecipeStats) string {
+	switch {
+	case s.Ratings > 0:
+		return fmt.Sprintf("%s · rated %s · cooked %d×", t.Label(), ratingText(s.Rating), s.TimesCooked)
+	case s.TimesCooked > 0:
+		return fmt.Sprintf("%s · cooked %d×", t.Label(), s.TimesCooked)
+	}
+	return t.Label() + " · not cooked yet"
+}
+
+// ratingText is "4" or "4.5".
+func ratingText(r float64) string {
+	return strconv.FormatFloat(math.Round(r*10)/10, 'f', -1, 64)
 }

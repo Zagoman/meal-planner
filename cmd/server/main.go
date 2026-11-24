@@ -91,6 +91,8 @@ func run() error {
 	plans.RegisterJobs(worker)
 	services.Plans = plans
 	services.Drafts = plans
+	services.Outcomes = plans
+	services.Library = plans
 
 	// Background jobs (every Claude call of the review flow) and the weekly
 	// schedules run inside this process.

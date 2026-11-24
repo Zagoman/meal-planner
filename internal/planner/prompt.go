@@ -4,6 +4,7 @@
 package planner
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -27,6 +28,7 @@ type PromptInput struct {
 	Sections []domain.Section
 	Feedback []FeedbackLine // last 8 weeks, newest first
 	Request  string         // what the user typed
+	Banned   []string       // meals not to plan, with the reason
 }
 
 // SwapInput adds what replacing one meal needs.
@@ -74,6 +76,7 @@ func BuildPlanPrompt(in PromptInput) string {
 	var b strings.Builder
 	writeProfile(&b, in.Profile, in.Sections)
 	writeFeedback(&b, in.Feedback)
+	writeBanned(&b, in.Banned)
 	fmt.Fprintf(&b, "\n## Task\nPlan the coming week: %s. Exactly that many meals of each type, no more and no fewer. Dinners match the protein mix where possible.\n",
 		targetsText(in.Profile.MealTargets))
 	writeRequest(&b, in.Request)
@@ -85,6 +88,7 @@ func BuildSwapPrompt(in SwapInput) string {
 	var b strings.Builder
 	writeProfile(&b, in.Profile, in.Sections)
 	writeFeedback(&b, in.Feedback)
+	writeBanned(&b, in.Banned)
 	fmt.Fprintf(&b, "\n## Task\nReturn exactly one %s", in.MealType)
 	if in.Day != "" {
 		fmt.Fprintf(&b, " with day %s", in.Day)
@@ -128,6 +132,16 @@ func writeProfile(b *strings.Builder, p domain.Profile, sections []domain.Sectio
 	b.WriteString("\n## Shop section keys (use exactly these for \"section\")\n")
 	for _, s := range sections {
 		fmt.Fprintf(b, "- %s (%s)\n", s.Key, s.Name)
+	}
+}
+
+func writeBanned(b *strings.Builder, banned []string) {
+	if len(banned) == 0 {
+		return
+	}
+	b.WriteString("\n## Never plan these meals\n")
+	for _, m := range banned {
+		fmt.Fprintf(b, "- %s\n", m)
 	}
 }
 
@@ -245,6 +259,7 @@ func BuildAskPrompt(in PromptInput, current []MealLine) string {
 	var b strings.Builder
 	writeProfile(&b, in.Profile, in.Sections)
 	writeFeedback(&b, in.Feedback)
+	writeBanned(&b, in.Banned)
 	b.WriteString("\n## Current draft for the week\n")
 	for _, m := range current {
 		fmt.Fprintf(&b, "- %s\n", m)
@@ -263,6 +278,7 @@ func BuildReplacePrompt(in PromptInput, replace []MealLine, keep []string) strin
 	var b strings.Builder
 	writeProfile(&b, in.Profile, in.Sections)
 	writeFeedback(&b, in.Feedback)
+	writeBanned(&b, in.Banned)
 	fmt.Fprintf(&b, "\n## Task\nThe household disliked these %d meals. Return exactly %d new meals, one for each, with the same meal_type and day, clearly different from the meal it replaces:\n",
 		len(replace), len(replace))
 	for _, m := range replace {
@@ -272,5 +288,18 @@ func BuildReplacePrompt(in PromptInput, replace []MealLine, keep []string) strin
 		fmt.Fprintf(&b, "The rest of the week is: %s; do not repeat those.\n", strings.Join(quoteAll(keep), ", "))
 	}
 	writeRequest(&b, "")
+	return b.String()
+}
+
+// BuildTweakPrompt returns the user message for a changed version of a
+// library recipe.
+func BuildTweakPrompt(in PromptInput, orig domain.MealJSON) string {
+	var b strings.Builder
+	writeProfile(&b, in.Profile, in.Sections)
+	writeBanned(&b, in.Banned)
+	raw, _ := json.Marshal(orig)
+	fmt.Fprintf(&b, "\n## The recipe\n%s\n", raw)
+	fmt.Fprintf(&b, "\n## Task\nReturn exactly one %s: this recipe changed as the household asks below. Keep everything the request does not ask to change. Give it a title that says what changed. \"day\" is null.\n", orig.MealType)
+	writeRequest(&b, in.Request)
 	return b.String()
 }

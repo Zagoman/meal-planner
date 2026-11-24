@@ -27,6 +27,8 @@ type Rules struct {
 	// AnyCount skips the meal-target check (Ask Claude may change counts);
 	// each type still holds at most domain.MaxMealsPerType meals.
 	AnyCount bool
+	// Banned meals (by domain.TitleKey) may not be planned.
+	Banned map[string]Banned
 }
 
 // SwapRule is the one meal a swap must return.
@@ -135,6 +137,9 @@ func Validate(raw []byte, r Rules) (domain.MealPlanJSON, []string) {
 			seenDay[m.MealType][*m.Day] = true
 		}
 
+		if b, ok := r.Banned[domain.TitleKey(m.Title)]; ok {
+			add("%s: the household does not want %q (%s); plan a different meal", name, b.Title, b.Reason)
+		}
 		if r.Profile.OnePot && !m.OnePot && m.MealType != domain.MealBaking {
 			add("%s: the household only cooks one-pot meals; make it one-pot and set one_pot to true", name)
 		}

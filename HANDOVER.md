@@ -1,7 +1,9 @@
 # Handover
 
 Where the build stands against the dev handoff (five windows). Update this at
-the end of every window.
+the end of every window. Open gaps and deviations from the handoff are
+tracked in [GAPS.md](GAPS.md); the "Known issues" below are the snapshot at
+the time of each window.
 
 ## Window 1 – Catch up the basics (branch `window-1-basics`)
 
@@ -168,4 +170,63 @@ Two fixes found on the live server, deployed the same evening:
 - The time zone is not editable in the UI (default Europe/Copenhagen).
 - The draft-ready email is window 4.
 
-## Next: window 3 – Rating and recipe library
+## Window 3 – Rating and recipe library (branch `window-3-rating-library`)
+
+Open questions answered with the handoff's defaults: a tweak is saved as a
+new version and the original kept; "Add to next week" with no draft makes
+a draft holding that meal.
+
+**Built**
+
+- Migration `00004_outcomes_library.sql`:
+  - `meal_outcomes` replaces `feedback`: one per meal (cooked with a 1–5
+    rating, or not cooked), whoever answered last. The old ratings are
+    copied (latest per meal); `feedback` is dropped.
+  - `recipes`: `source`, `parent_recipe_id`, `meal_type`, `title_key`;
+    Claude's recipes are unique per household, type and title.
+  - Every existing meal is back-filled into the library and linked
+    (`meals.recipe_id`).
+- Every meal Claude plans (draft, swap, Ask Claude, auto-confirm, the API's
+  generate) is saved to the library and linked; a title suggested again
+  reuses its recipe.
+- Recipes someone rated 1 and the meals of the active plan marked not
+  cooked are listed in every prompt as "never plan" and rejected by
+  validation (Ask Claude may keep meals already in the draft; a tweak may
+  start from a disliked recipe).
+- `service.Outcomes` (rating step) and `service.Library` (search, detail,
+  tweak job, add to next week, add to this week), in `planner/library.go`.
+  `Feedback.Rate` (the API) now writes the outcome.
+  - A new draft keeps meals added to it by hand (library, added back) and
+    tells Claude not to plan them again; a scheduled draft fills in a draft
+    that holds only such meals.
+  - Add to this week: ingredients not on the active list yet, as unticked
+    manual items with their amount; water never.
+- Web (wireframes P2, Not cooked of P3, L1, L4):
+  - `GET /plans/current/rate`: full screen, "Step 1 of 2" when a draft
+    waits, 1–5 and Not cooked per meal, notes, progress (`#rate-progress`,
+    swapped out of band), Skip / Continue to draft. The draft card's
+    "Start review" opens it while a meal of this week is unanswered.
+  - Review: "Not cooked last week" (`#not-cooked`) with Add back
+    (`POST /plans/next/meals`).
+  - `GET /recipes?q=&filter=`: search (title or ingredient) and filter
+    chips; htmx gets `#recipe-results`. The search fires on `input` (not
+    only `keyup`, so pasting and autofill search too).
+  - `GET /recipes/{id}`: pills, latest note, Tweak with Claude (`#tweak`,
+    refreshes on `recipe-<id>` over SSE), ingredients, steps, Add to next
+    week / Add to this week (toast).
+- Tests: planner (rate a week, not-cooked comes back only when added,
+  rated-1 never suggested, library search/filters, tweak + add to this
+  week, add to next week without a draft, cross-household), migration data
+  copy, web routes for all of it, and Playwright (rate the week, add the
+  not-cooked meal back, search, tweak, add to this week).
+
+**Known issues**
+
+- A draft made before the rating step (the 18:00 weekly draft) can already
+  contain a meal that is then marked not cooked; only later swaps, Ask
+  Claude and drafts avoid it. Rare: Claude would have to repeat last week's
+  meal.
+- Ratings are per household, not per member.
+- "Add recipe" (L2) is window 5; the library has no photos yet.
+
+## Next: window 4 – Households and email

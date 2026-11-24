@@ -1,0 +1,298 @@
+package web
+
+import (
+	"fmt"
+
+	"github.com/google/uuid"
+
+	"github.com/Zagoman/meal-planner/internal/domain"
+)
+
+// SubLayout is a page under a tab with a back link (a recipe of the
+// library): the tab bar stays.
+templ SubLayout(title string, active Tab, back, backLabel string) {
+	@page(title, active, back, backLabel, true) {
+		{ children... }
+	}
+}
+
+// ---- P2 Rate last week ------------------------------------------------------
+
+templ RatePage(l domain.RateList, hasDraft bool) {
+	@FullLayout("How was this week?", "/week", "Week") {
+		if hasDraft {
+			<p class="step small muted">Step 1 of 2</p>
+		}
+		<p class="sub small muted">Rate what you cooked, or mark it not cooked. This shapes next week's plan.</p>
+		@RateProgress(l, false)
+		<div class="meals rate-list">
+			for _, m := range l.Meals {
+				@OutcomeCard(m)
+			}
+		</div>
+		<div class="rate-foot">
+			if hasDraft {
+				<a class="button secondary-btn" href="/plans/next">Skip</a>
+				<a class="button primary" href="/plans/next">Continue to draft</a>
+			} else {
+				<a class="button primary" href="/week">Done</a>
+			}
+		</div>
+	}
+}
+
+templ RateProgress(l domain.RateList, oob bool) {
+	<div
+		id="rate-progress"
+		class="progress"
+		if oob {
+			hx-swap-oob="true"
+		}
+	>
+		<div class="bar" role="progressbar" aria-label="Meals answered" aria-valuemin="0" aria-valuemax={ itoa(len(l.Meals)) } aria-valuenow={ itoa(l.Done()) }>
+			<div class="bar-fill" style={ barStyle(l.Done(), len(l.Meals)) }></div>
+		</div>
+		<p class="small muted">{ itoa(l.Done()) } of { itoa(len(l.Meals)) } done</p>
+	</div>
+}
+
+// OutcomeCard is one meal of the rating step.
+templ OutcomeCard(m domain.RateMeal) {
+	{{ notCooked := m.Outcome != nil && m.Outcome.Status == domain.NotCooked }}
+	<article id={ "outcome-" + m.ID.String() } class={ "card outcome", templ.KV("off", notCooked) }>
+		<div class="outcome-head">
+			<div class="dm-text">
+				<span class="meal-title">{ m.Title }</span>
+				<span class="small muted">{ m.MealType.Label() }</span>
+			</div>
+			@outcomeForm(m, "not_cooked") {
+				if notCooked {
+					<input type="hidden" name="clear" value="1"/>
+				} else {
+					<input type="hidden" name="not_cooked" value="1"/>
+				}
+				<button type="submit" class={ "nc", templ.KV("on", notCooked) } aria-pressed={ boolStr(notCooked) }>Not cooked</button>
+			}
+		</div>
+		if notCooked {
+			<p class="small muted">You can add it back at the end of the review.</p>
+		} else {
+			<div class="stars" role="group" aria-label={ "Rate " + m.Title }>
+				for i := 1; i <= 5; i++ {
+					@outcomeForm(m, "rating") {
+						<input type="hidden" name="rating" value={ itoa(i) }/>
+						{{ on := m.Outcome != nil && m.Outcome.Rating == i }}
+						<button type="submit" class={ "sc", templ.KV("on", on) } aria-pressed={ boolStr(on) } aria-label={ fmt.Sprintf("%d of 5", i) }>{ itoa(i) }</button>
+					}
+				}
+			</div>
+			if m.Outcome != nil {
+				if m.Outcome.Note != "" {
+					<p class="note">“{ m.Outcome.Note }”</p>
+				}
+				<details class="add-note">
+					<summary>
+						if m.Outcome.Note == "" {
+							Add a note
+						} else {
+							Change the note
+						}
+					</summary>
+					@outcomeForm(m, "note") {
+						<label class="visually-hidden" for={ "note-" + m.ID.String() }>Note</label>
+						<input id={ "note-" + m.ID.String() } name="note" maxlength="1000" value={ m.Outcome.Note } placeholder="E.g. baby loved it"/>
+						<button type="submit">Save note</button>
+					}
+				</details>
+			}
+		}
+	</article>
+}
+
+templ outcomeForm(m domain.RateMeal, kind string) {
+	<form class={ "outcome-form", kind } action={ templ.SafeURL("/meals/" + m.ID.String() + "/outcome") } method="post"
+		hx-post={ "/meals/" + m.ID.String() + "/outcome" } hx-target="closest article" hx-swap="outerHTML">
+		{ children... }
+	</form>
+}
+
+// ---- Not cooked last week (review page) -------------------------------------
+
+templ NotCookedSection(meals []domain.NotCookedMeal, oob bool) {
+	<section
+		id="not-cooked"
+		hx-get="/plans/next/not-cooked"
+		hx-trigger="sse:plan.updated"
+		hx-swap="outerHTML"
+		if oob {
+			hx-swap-oob="true"
+		}
+	>
+		if len(meals) > 0 {
+			<h2 class="sec-label">Not cooked last week</h2>
+			<ul class="not-cooked">
+				for _, m := range meals {
+					<li>
+						<span>{ m.Title }</span>
+						<form action="/plans/next/meals" method="post" hx-post="/plans/next/meals" hx-target="#draft-meals" hx-swap="outerHTML">
+							<input type="hidden" name="recipe_id" value={ m.RecipeID.String() }/>
+							<input type="hidden" name="from" value="not_cooked"/>
+							<button type="submit" class="small-btn">Add back</button>
+						</form>
+					</li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+// ---- L1 Browse ----------------------------------------------------------------
+
+var recipeFilters = []struct {
+	key   domain.RecipeFilter
+	label string
+}{
+	{domain.FilterAll, "All"},
+	{domain.FilterRated4, "Rated 4+"},
+	{domain.FilterOwn, "Our own"},
+	{"breakfast", "Breakfast"},
+	{"lunch", "Lunch"},
+	{"dinner", "Dinner"},
+	{"baking", "Baking"},
+}
+
+templ RecipesPage(q string, filter domain.RecipeFilter, recipes []domain.RecipeSummary) {
+	@Layout("Recipes", TabRecipes) {
+		<form class="search" action="/recipes" method="get" hx-get="/recipes" hx-target="#recipe-results" hx-swap="outerHTML" hx-push-url="true"
+			hx-trigger="input changed delay:300ms from:#recipe-q, change from:input[name=filter], submit">
+			<label class="search-box" for="recipe-q">
+				@icon("M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16 M21 21l-4.3-4.3")
+				<span class="visually-hidden">Search recipes</span>
+				<input id="recipe-q" name="q" type="search" value={ q } placeholder="Search recipes or ingredients" autocomplete="off"/>
+			</label>
+			<div class="chips filters" role="radiogroup" aria-label="Filter">
+				for _, f := range recipeFilters {
+					<label class="chip">
+						<input type="radio" name="filter" value={ string(f.key) } checked?={ f.key == filter }/>
+						{ f.label }
+					</label>
+				}
+			</div>
+			<noscript><button type="submit">Search</button></noscript>
+		</form>
+		@RecipeResults(recipes)
+	}
+}
+
+templ RecipeResults(recipes []domain.RecipeSummary) {
+	<div id="recipe-results" class="recipes">
+		if len(recipes) == 0 {
+			<p class="empty muted">No recipes found. Every meal Claude plans is saved here.</p>
+		}
+		for _, r := range recipes {
+			<a class="rec" href={ templ.SafeURL("/recipes/" + r.ID.String()) }>
+				<span class="dm-text">
+					<span class="meal-title">{ r.Title }</span>
+					<span class="small muted">{ recipeLine(r.MealType, r.RecipeStats) }</span>
+				</span>
+				<span class="src">
+					if r.Tweaked {
+						Tweaked
+					} else {
+						{ r.Source.Label() }
+					}
+				</span>
+			</a>
+		}
+	</div>
+}
+
+// ---- L4 Recipe: tweak and add -------------------------------------------------
+
+templ RecipeDetailPage(d domain.RecipeDetail) {
+	@SubLayout(d.Meal.Title, TabRecipes, "/recipes", "Recipes") {
+		<div class="recipe" hx-ext="sse" sse-connect="/events">
+			<div class="pills">
+				<span class="pill">{ d.Meal.MealType.Label() }</span>
+				<span class="pill">{ itoa(d.Meal.Minutes) } min</span>
+				<span class="pill">{ statsLine(d.RecipeStats) }</span>
+				<span class="pill">
+					if d.ParentID != nil {
+						Tweaked version
+					} else if d.Source == domain.SourceClaude {
+						Made by Claude
+					} else {
+						Our own
+					}
+				</span>
+			</div>
+			if d.LatestNote != "" {
+				<p class="note">Your note: “{ d.LatestNote }”</p>
+			}
+			if d.ParentID != nil {
+				<p class="small"><a href={ templ.SafeURL("/recipes/" + d.ParentID.String()) }>See the original</a></p>
+			}
+			<h2 class="sec-label">Tweak with Claude</h2>
+			@TweakBox(d)
+			<h2 class="sec-label">Ingredients · { itoa(len(d.Meal.Ingredients)) }</h2>
+			<ul class="ingredients card">
+				for _, ing := range d.Meal.Ingredients {
+					<li><span class="qty">{ qty(ing.Qty, ing.Unit) }</span> { ing.Name }</li>
+				}
+			</ul>
+			<h2 class="sec-label">Steps</h2>
+			<ol class="steps card">
+				for _, st := range d.Meal.Steps {
+					<li class={ templ.KV("baby", st.BabyPortion) }>{ st.Text }</li>
+				}
+			</ol>
+			<div class="recipe-foot">
+				<form action={ templ.SafeURL("/recipes/" + d.ID.String() + "/add-next") } method="post" hx-post={ "/recipes/" + d.ID.String() + "/add-next" } hx-swap="none">
+					<button type="submit" class="primary wide">Add to next week</button>
+				</form>
+				<form action={ templ.SafeURL("/recipes/" + d.ID.String() + "/add-this") } method="post" hx-post={ "/recipes/" + d.ID.String() + "/add-this" } hx-swap="none">
+					<button type="submit" class="secondary-btn wide">Add to this week</button>
+				</form>
+				<p class="small muted center">This week puts missing ingredients straight on the current list.</p>
+			</div>
+		</div>
+	}
+}
+
+// TweakBox is the tweak form and the state of the last tweak. It refetches
+// when the tweak finishes.
+templ TweakBox(d domain.RecipeDetail) {
+	<div id="tweak" hx-get={ "/recipes/" + d.ID.String() + "/tweak" } hx-trigger={ "sse:recipe-" + d.ID.String() } hx-swap="outerHTML">
+		if d.Tweak != nil && d.Tweak.Status.Pending() {
+			<p class="notice" role="status"><span class="spinner" aria-hidden="true"></span> Claude is tweaking this recipe…</p>
+		} else {
+			if d.Tweak != nil && d.Tweak.Status == domain.JobFailed {
+				<p class="notice warn" role="status">Couldn't tweak the recipe. Try again.</p>
+			}
+			if d.TweakedID != nil {
+				<p class="notice" role="status">New version saved. <a href={ templ.SafeURL("/recipes/" + d.TweakedID.String()) }>Open it</a></p>
+			}
+			<form class="ask" action={ templ.SafeURL("/recipes/" + d.ID.String() + "/tweak") } method="post"
+				hx-post={ "/recipes/" + d.ID.String() + "/tweak" } hx-target="#tweak" hx-swap="outerHTML" hx-disabled-elt="find button">
+				<label class="visually-hidden" for="tweak-prompt">Ask Claude to change this recipe</label>
+				<input id="tweak-prompt" name="prompt" required maxlength="500" placeholder="Add chicken, make it for 4…" autocomplete="off"/>
+				<button type="submit" class="icon-btn" aria-label="Send to Claude">
+					@icon("m22 2-7 20-4-9-9-4Z M22 2 11 13")
+				</button>
+			</form>
+			<p class="small muted">Saves as a new version; the original stays in the library.</p>
+		}
+	</div>
+}
+
+// outcomeSwap is a rated meal's card plus the progress, out of band.
+templ outcomeSwap(m domain.RateMeal, l domain.RateList) {
+	@OutcomeCard(m)
+	@RateProgress(l, true)
+}
+
+// addBackSwap is the draft's meals plus the Not cooked section, out of band.
+templ addBackSwap(r domain.Review, me uuid.UUID) {
+	@DraftMeals(r, me)
+	@NotCookedSection(r.NotCooked, true)
+}

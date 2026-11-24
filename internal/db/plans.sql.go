@@ -67,6 +67,22 @@ func (q *Queries) ConfirmDraftPlan(ctx context.Context, arg ConfirmDraftPlanPara
 	return result.RowsAffected(), nil
 }
 
+const countClaudeMeals = `-- name: CountClaudeMeals :one
+SELECT count(*) FROM meals WHERE plan_id = $1 AND household_id = $2 AND added_from = 'claude'
+`
+
+type CountClaudeMealsParams struct {
+	PlanID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) CountClaudeMeals(ctx context.Context, arg CountClaudeMealsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countClaudeMeals, arg.PlanID, arg.HouseholdID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countMeals = `-- name: CountMeals :one
 SELECT count(*) FROM meals WHERE plan_id = $1 AND household_id = $2
 `

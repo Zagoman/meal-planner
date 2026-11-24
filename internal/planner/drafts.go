@@ -51,6 +51,7 @@ func (s *Service) RegisterJobs(w *jobs.Worker) {
 	w.Handle(domain.JobSwap, s.failing(s.runSwap))
 	w.Handle(domain.JobAsk, s.failing(s.runAsk))
 	w.Handle(domain.JobAutoConfirm, s.failing(s.runAutoConfirm))
+	w.Handle(domain.JobTweak, s.failing(s.runTweak))
 }
 
 // failing publishes a job's failure so the pending element on every phone
@@ -174,6 +175,9 @@ func (s *Service) Card(ctx context.Context, sc domain.Scope) (domain.DraftCard, 
 		id := draft.ID
 		card.State, card.PlanID, card.MealCount = domain.DraftReady, &id, int(n)
 		card.ConfirmsAt = confirmsAt(draft.WeekStart, p)
+		if card.RateFirst, err = s.unrated(ctx, q, sc.HouseholdID); err != nil {
+			return card, err
+		}
 		return card, nil
 	case !errors.Is(err, pgx.ErrNoRows):
 		return card, fmt.Errorf("draft plan: %w", err)
@@ -222,6 +226,18 @@ func (s *Service) Review(ctx context.Context, sc domain.Scope) (domain.Review, e
 			return domain.Review{}, err
 		}
 		r.Meals = append(r.Meals, dm)
+	}
+	r.NotCooked = []domain.NotCookedMeal{}
+	if active, err := q.GetActivePlan(ctx, sc.HouseholdID); err == nil {
+		rows, err := q.ListNotCooked(ctx, db.ListNotCookedParams{PlanID: active.ID, HouseholdID: sc.HouseholdID, OtherPlanID: draft.ID})
+		if err != nil {
+			return domain.Review{}, fmt.Errorf("not cooked: %w", err)
+		}
+		for _, m := range rows {
+			r.NotCooked = append(r.NotCooked, domain.NotCookedMeal{RecipeID: m.RecipeID.UUID, Title: m.Title, MealType: domain.MealType(m.MealType)})
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return domain.Review{}, fmt.Errorf("active plan: %w", err)
 	}
 	ask, err := q.LatestJob(ctx, db.LatestJobParams{HouseholdID: sc.HouseholdID, Kind: string(domain.JobAsk)})
 	if err == nil && ask.PlanID.Valid && ask.PlanID.UUID == draft.ID {
@@ -644,8 +660,10 @@ func (s *Service) runDraft(ctx context.Context, job db.Job) (any, error) {
 		if p.Replace {
 			return false, nil
 		}
-		if _, err := q.GetDraftPlanForWeek(ctx, db.GetDraftPlanForWeekParams{HouseholdID: sc.HouseholdID, WeekStart: week}); err == nil {
-			return true, nil
+		if d, err := q.GetDraftPlanForWeek(ctx, db.GetDraftPlanForWeekParams{HouseholdID: sc.HouseholdID, WeekStart: week}); err == nil {
+			// A draft holding only meals added by hand is filled in.
+			n, err := q.CountClaudeMeals(ctx, db.CountClaudeMealsParams{PlanID: d.ID, HouseholdID: sc.HouseholdID})
+			return n > 0, err
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return false, err
 		}
@@ -665,7 +683,18 @@ func (s *Service) runDraft(ctx context.Context, job db.Job) (any, error) {
 	if hh.profile.TotalMeals() == 0 {
 		return nil, fmt.Errorf("%w: the profile plans no meals", domain.ErrGeneration)
 	}
-	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback}
+	// Meals the household added to a draft for this week by hand (from the
+	// library, or added back) stay in the new one.
+	kept, err := s.handAdded(ctx, q, sc.HouseholdID, week)
+	if err != nil {
+		return nil, err
+	}
+	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines()}
+	if len(kept) > 0 {
+		for _, k := range kept {
+			in.Request += fmt.Sprintf("The household already added %q (%s); do not plan it again. ", k.Title, k.MealType)
+		}
+	}
 	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildPlanPrompt(in), hh.rules(nil), kindPlan)
 	if err != nil {
 		return nil, err
@@ -673,10 +702,8 @@ func (s *Service) runDraft(ctx context.Context, job db.Job) (any, error) {
 	var draft db.Plan
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		qt := q.WithTx(tx)
-		if p.Replace {
-			if err := qt.DeleteDraftForWeek(ctx, db.DeleteDraftForWeekParams{HouseholdID: sc.HouseholdID, WeekStart: week}); err != nil {
-				return fmt.Errorf("replace draft: %w", err)
-			}
+		if err := qt.DeleteDraftForWeek(ctx, db.DeleteDraftForWeekParams{HouseholdID: sc.HouseholdID, WeekStart: week}); err != nil {
+			return fmt.Errorf("replace draft: %w", err)
 		}
 		var err error
 		draft, err = qt.CreateDraftPlan(ctx, db.CreateDraftPlanParams{
@@ -687,6 +714,11 @@ func (s *Service) runDraft(ctx context.Context, job db.Job) (any, error) {
 		}
 		for i, m := range mp.Meals {
 			if _, err := insertMeal(ctx, qt, sc.HouseholdID, draft.ID, i, m); err != nil {
+				return err
+			}
+		}
+		for i, k := range kept {
+			if _, err := insertRecipeMeal(ctx, qt, sc.HouseholdID, draft.ID, len(mp.Meals)+i, k.recipe, k.from); err != nil {
 				return err
 			}
 		}
@@ -733,7 +765,7 @@ func (s *Service) runSwap(ctx context.Context, job db.Job) (any, error) {
 	}
 	day := domain.Weekday(old.Day.String)
 	in := SwapInput{
-		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback},
+		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines()},
 		MealType:    domain.MealType(old.MealType), Day: day, Current: old.Title, OtherMeals: others,
 	}
 	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildSwapPrompt(in),
@@ -787,7 +819,11 @@ func (s *Service) runAsk(ctx context.Context, job db.Job) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: p.Prompt}
+	// Meals already in the draft may stay, even a not-cooked one added back.
+	for _, m := range meals {
+		delete(hh.banned, domain.TitleKey(m.Title))
+	}
+	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: p.Prompt, Banned: hh.bannedLines()}
 	rules := hh.rules(nil)
 	rules.AnyCount = true
 	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildAskPrompt(in, current), rules, kindAsk)
@@ -918,7 +954,7 @@ func (s *Service) replaceDisliked(ctx context.Context, sc domain.Scope, planID u
 		lines[i] = MealLine{Type: domain.MealType(m.MealType), Day: domain.Weekday(m.Day.String), Title: m.Title}
 		types[i] = domain.MealType(m.MealType)
 	}
-	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback}
+	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines()}
 	rules := hh.rules(nil)
 	rules.Replace = types
 	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildReplacePrompt(in, lines, keep), rules, kindAutoConfirm)

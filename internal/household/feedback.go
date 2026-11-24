@@ -16,8 +16,9 @@ import (
 
 const maxNote = 1000
 
-// Rate records the caller's rating of a meal of their household. Rating
-// again replaces the earlier rating (one per member and meal).
+// Rate records a rating of a meal of the household: the meal's outcome
+// becomes "cooked" with that rating (one outcome per meal; rating again
+// replaces it).
 func (s *Service) Rate(ctx context.Context, sc domain.Scope, mealID uuid.UUID, rating int, note string) (domain.Feedback, error) {
 	note = strings.TrimSpace(note)
 	var problems []string
@@ -33,44 +34,61 @@ func (s *Service) Rate(ctx context.Context, sc domain.Scope, mealID uuid.UUID, r
 	if _, err := s.q.GetMeal(ctx, db.GetMealParams{ID: mealID, HouseholdID: sc.HouseholdID}); err != nil {
 		return domain.Feedback{}, notFound("rate meal", err)
 	}
-	f, err := s.q.UpsertFeedback(ctx, db.UpsertFeedbackParams{
-		HouseholdID: sc.HouseholdID, MealID: mealID,
-		MemberID: uuid.NullUUID{UUID: sc.MemberID, Valid: true},
-		Rating:   int32(rating), //nolint:gosec // validated 1..5
-		Note:     note,
+	r := int32(rating) //nolint:gosec // validated 1..5
+	o, err := s.q.UpsertOutcome(ctx, db.UpsertOutcomeParams{
+		HouseholdID: sc.HouseholdID, MealID: mealID, Status: string(domain.Cooked),
+		Rating: &r, Note: note, MemberID: uuid.NullUUID{UUID: sc.MemberID, Valid: sc.MemberID != uuid.Nil},
 	})
 	if err != nil {
 		return domain.Feedback{}, fmt.Errorf("rate meal: %w", err)
 	}
-	return domain.Feedback{ID: f.ID, MealID: f.MealID, Rating: int(f.Rating), Note: f.Note, CreatedAt: f.CreatedAt}, nil
+	// An outcome is one per meal, so its id is the meal's.
+	return domain.Feedback{ID: o.MealID, MealID: o.MealID, Rating: rating, Note: o.Note, CreatedAt: o.At}, nil
 }
 
-// SaveRecipe copies a meal of the household into the recipe library. The
-// copy survives the plan being archived or deleted.
+// SaveRecipe returns the library recipe of a meal of the household,
+// saving the meal to the library first if it has none. The recipe survives
+// the plan being archived or deleted.
 func (s *Service) SaveRecipe(ctx context.Context, sc domain.Scope, mealID uuid.UUID) (domain.Recipe, error) {
-	m, err := loadMeal(ctx, s.q, sc, mealID)
+	row, err := s.q.GetMeal(ctx, db.GetMealParams{ID: mealID, HouseholdID: sc.HouseholdID})
 	if err != nil {
-		return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
+		return domain.Recipe{}, notFound("save recipe", err)
 	}
-	data, err := json.Marshal(mealToJSON(m))
+	if !row.RecipeID.Valid {
+		m, err := loadMeal(ctx, s.q, sc, mealID)
+		if err != nil {
+			return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
+		}
+		data, err := json.Marshal(mealToJSON(m))
+		if err != nil {
+			return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
+		}
+		id, err := s.q.UpsertClaudeRecipe(ctx, db.UpsertClaudeRecipeParams{
+			HouseholdID:  sc.HouseholdID,
+			SourceMealID: uuid.NullUUID{UUID: m.ID, Valid: true},
+			Title:        m.Title,
+			Protein:      string(m.Protein),
+			Minutes:      int32(m.Minutes), //nolint:gosec // from the database
+			OnePot:       m.OnePot,
+			Servings:     int32(m.Servings), //nolint:gosec // from the database
+			Data:         data,
+			CreatedBy:    uuid.NullUUID{UUID: sc.MemberID, Valid: sc.MemberID != uuid.Nil},
+			MealType:     string(m.MealType),
+			TitleKey:     domain.TitleKey(m.Title),
+		})
+		if err != nil {
+			return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
+		}
+		if err := s.q.SetMealRecipe(ctx, db.SetMealRecipeParams{ID: mealID, HouseholdID: sc.HouseholdID, RecipeID: uuid.NullUUID{UUID: id, Valid: true}}); err != nil {
+			return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
+		}
+		row.RecipeID = uuid.NullUUID{UUID: id, Valid: true}
+	}
+	r, err := s.q.GetRecipe(ctx, db.GetRecipeParams{ID: row.RecipeID.UUID, HouseholdID: sc.HouseholdID})
 	if err != nil {
-		return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
+		return domain.Recipe{}, notFound("save recipe", err)
 	}
-	r, err := s.q.CreateRecipe(ctx, db.CreateRecipeParams{
-		HouseholdID:  sc.HouseholdID,
-		SourceMealID: uuid.NullUUID{UUID: m.ID, Valid: true},
-		Title:        m.Title,
-		Protein:      string(m.Protein),
-		Minutes:      int32(m.Minutes), //nolint:gosec // from the database
-		OnePot:       m.OnePot,
-		Servings:     int32(m.Servings), //nolint:gosec // from the database
-		Data:         data,
-		CreatedBy:    uuid.NullUUID{UUID: sc.MemberID, Valid: true},
-	})
-	if err != nil {
-		return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
-	}
-	return recipeFromDB(r)
+	return RecipeFromDB(r)
 }
 
 func (s *Service) Recipes(ctx context.Context, sc domain.Scope) ([]domain.Recipe, error) {
@@ -80,7 +98,7 @@ func (s *Service) Recipes(ctx context.Context, sc domain.Scope) ([]domain.Recipe
 	}
 	out := make([]domain.Recipe, 0, len(rows))
 	for _, r := range rows {
-		rec, err := recipeFromDB(r)
+		rec, err := RecipeFromDB(r)
 		if err != nil {
 			return nil, err
 		}
@@ -148,9 +166,9 @@ func mealToJSON(m domain.Meal) domain.MealJSON {
 	return j
 }
 
-// recipeFromDB rebuilds the stored meal. Recipe.Meal.ID is the source meal
+// RecipeFromDB rebuilds the stored meal. Recipe.Meal.ID is the source meal
 // (zero if that meal is gone); ingredient IDs are not kept.
-func recipeFromDB(r db.Recipe) (domain.Recipe, error) {
+func RecipeFromDB(r db.Recipe) (domain.Recipe, error) {
 	var j domain.MealJSON
 	if err := json.Unmarshal(r.Data, &j); err != nil {
 		return domain.Recipe{}, fmt.Errorf("recipe %s data: %w", r.ID, err)
@@ -160,9 +178,7 @@ func recipeFromDB(r db.Recipe) (domain.Recipe, error) {
 		OnePot: r.OnePot, Servings: int(r.Servings), AfterBabyPortion: nonNil(j.AfterBabyPortion),
 		Ingredients: make([]domain.Ingredient, 0, len(j.Ingredients)), Steps: make([]domain.Step, 0, len(j.Steps)),
 	}
-	if m.MealType == "" { // saved before meal types existed
-		m.MealType = domain.MealDinner
-	}
+	m.MealType = domain.MealType(r.MealType)
 	if j.Day != nil {
 		m.Day = *j.Day
 	}
@@ -174,7 +190,11 @@ func recipeFromDB(r db.Recipe) (domain.Recipe, error) {
 	for _, st := range j.Steps {
 		m.Steps = append(m.Steps, domain.Step(st))
 	}
-	rec := domain.Recipe{ID: r.ID, Meal: m, CreatedAt: r.CreatedAt}
+	rec := domain.Recipe{ID: r.ID, Meal: m, CreatedAt: r.CreatedAt, Source: domain.RecipeSource(r.Source)}
+	if r.ParentRecipeID.Valid {
+		id := r.ParentRecipeID.UUID
+		rec.ParentID = &id
+	}
 	if r.SourceMealID.Valid {
 		id := r.SourceMealID.UUID
 		rec.SourceMealID = &id

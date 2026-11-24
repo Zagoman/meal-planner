@@ -58,6 +58,55 @@ func (q *Queries) AddManualListItem(ctx context.Context, arg AddManualListItemPa
 	return i, err
 }
 
+const addRecipeListItem = `-- name: AddRecipeListItem :one
+INSERT INTO list_items (household_id, plan_id, name, normalized_name, qty_text, section, is_manual, added_by)
+VALUES ($1, $2, $3, $4, $5, $6, true, $7) RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by
+`
+
+type AddRecipeListItemParams struct {
+	HouseholdID    uuid.UUID
+	PlanID         uuid.UUID
+	Name           string
+	NormalizedName string
+	QtyText        string
+	Section        string
+	AddedBy        uuid.NullUUID
+}
+
+// An ingredient of a recipe added to this week: a manual item with its amount.
+func (q *Queries) AddRecipeListItem(ctx context.Context, arg AddRecipeListItemParams) (ListItem, error) {
+	row := q.db.QueryRow(ctx, addRecipeListItem,
+		arg.HouseholdID,
+		arg.PlanID,
+		arg.Name,
+		arg.NormalizedName,
+		arg.QtyText,
+		arg.Section,
+		arg.AddedBy,
+	)
+	var i ListItem
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.PlanID,
+		&i.Name,
+		&i.NormalizedName,
+		&i.QtyText,
+		&i.NeedText,
+		&i.Section,
+		&i.Checked,
+		&i.CheckedBy,
+		&i.CheckedAt,
+		&i.IsManual,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CheckHome,
+		&i.HaveIt,
+		&i.AddedBy,
+	)
+	return i, err
+}
+
 const deleteListItem = `-- name: DeleteListItem :execrows
 DELETE FROM list_items WHERE id = $1 AND household_id = $2
 `

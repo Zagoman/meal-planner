@@ -13,19 +13,21 @@ import (
 type Kind string
 
 const (
-	ItemChanged Kind = "item"    // one list item was added, ticked or edited
-	ItemDeleted Kind = "deleted" // one list item was removed
-	ListRebuilt Kind = "list"    // the whole list changed (new plan, swap)
-	MealUpdated Kind = "meal"    // a draft meal's votes, swap or removal (MealID)
-	PlanUpdated Kind = "plan"    // a draft was made, changed or confirmed
-	JobFailed   Kind = "failed"  // a Claude job failed (MealID set for a swap)
+	ItemChanged   Kind = "item"    // one list item was added, ticked or edited
+	ItemDeleted   Kind = "deleted" // one list item was removed
+	ListRebuilt   Kind = "list"    // the whole list changed (new plan, swap)
+	MealUpdated   Kind = "meal"    // a draft meal's votes, swap or removal (MealID)
+	PlanUpdated   Kind = "plan"    // a draft was made, changed or confirmed
+	JobFailed     Kind = "failed"  // a Claude job failed (MealID set for a swap)
+	RecipeUpdated Kind = "recipe"  // a recipe's tweak finished or failed (RecipeID)
 )
 
 // Event is what the SSE handlers receive; they render the matching partial.
 type Event struct {
-	Kind   Kind
-	ItemID uuid.UUID // ItemChanged, ItemDeleted
-	MealID uuid.UUID // MealUpdated, and JobFailed for a swap
+	Kind     Kind
+	ItemID   uuid.UUID // ItemChanged, ItemDeleted
+	MealID   uuid.UUID // MealUpdated, and JobFailed for a swap
+	RecipeID uuid.UUID // RecipeUpdated
 }
 
 // IsList reports whether the event changes the shopping list.

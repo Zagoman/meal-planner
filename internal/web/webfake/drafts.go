@@ -70,7 +70,8 @@ func (s *Store) Card(_ context.Context, sc domain.Scope) (domain.DraftCard, erro
 		return domain.DraftCard{State: domain.DraftMaking}, nil
 	case d.plan != nil:
 		id := d.plan.ID
-		return domain.DraftCard{State: domain.DraftReady, PlanID: &id, MealCount: len(d.plan.Meals), ConfirmsAt: s.confirmsAt(h, d.plan.WeekStart)}, nil
+		return domain.DraftCard{State: domain.DraftReady, PlanID: &id, MealCount: len(d.plan.Meals),
+			ConfirmsAt: s.confirmsAt(h, d.plan.WeekStart), RateFirst: h.rateFirst()}, nil
 	case d.failed != "":
 		return domain.DraftCard{State: domain.DraftFailed, Error: d.failed}, nil
 	}
@@ -102,8 +103,17 @@ func (s *Store) RequestDraft(_ context.Context, sc domain.Scope) (domain.Job, er
 			d.failed = "claude: overloaded"
 		} else {
 			p := domain.Plan{ID: uuid.New(), WeekStart: weekStart(time.Now()), Status: domain.PlanDraft, CreatedAt: time.Now()}
+			// Like the real planner, never the meals not cooked last week.
+			exclude := map[string]bool{}
+			if h.plan != nil {
+				for _, m := range h.plan.Meals {
+					if o, ok := h.lib().outcomes[m.ID]; ok && o.Status == domain.NotCooked {
+						exclude[m.Title] = true
+					}
+				}
+			}
 			for i := range max(1, min(7, h.profile.MealTargets[domain.MealDinner])) {
-				p.Meals = append(p.Meals, h.nextMeal(domain.Weekdays[i], nil))
+				p.Meals = append(p.Meals, h.nextMeal(domain.Weekdays[i], exclude))
 			}
 			d.plan = &p
 			clear(d.votes)
@@ -156,7 +166,8 @@ func (s *Store) Review(_ context.Context, sc domain.Scope) (domain.Review, error
 	if d.plan == nil {
 		return domain.Review{}, fmt.Errorf("review: %w", domain.ErrNotFound)
 	}
-	r := domain.Review{Plan: clonePlan(*d.plan), ConfirmsAt: s.confirmsAt(h, d.plan.WeekStart), Asking: d.asking, AskError: d.askErr}
+	r := domain.Review{Plan: clonePlan(*d.plan), ConfirmsAt: s.confirmsAt(h, d.plan.WeekStart), Asking: d.asking, AskError: d.askErr,
+		NotCooked: h.notCooked()}
 	for _, m := range d.plan.Meals {
 		dm, _ := s.draftMealLocked(h, sc, m.ID)
 		r.Meals = append(r.Meals, dm)

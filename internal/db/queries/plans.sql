@@ -22,6 +22,9 @@ INSERT INTO meals (household_id, plan_id, day, meal_type, position, title, prote
                    after_baby_portion, recipe_id, added_from)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *;
 
+-- name: CountClaudeMeals :one
+SELECT count(*) FROM meals WHERE plan_id = $1 AND household_id = $2 AND added_from = 'claude';
+
 -- name: GetMeal :one
 SELECT * FROM meals WHERE id = $1 AND household_id = $2;
 

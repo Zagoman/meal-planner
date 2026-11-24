@@ -162,7 +162,8 @@ func (re *realEnv) assertAUnchanged() {
 	if !found || n != re.items {
 		t.Errorf("A list changed: found=%v items=%d want %d", found, n, re.items)
 	}
-	for table, want := range map[string]int{"feedback": 0, "invites": 0, "household_members": 1, "recipes": 0} {
+	// recipes: A's seeded meal is in its library; B's calls add none to it.
+	for table, want := range map[string]int{"meal_outcomes": 0, "invites": 0, "household_members": 1, "recipes": 1} {
 		var got int
 		if err := re.pool.QueryRow(ctx, "SELECT count(*) FROM "+table+" WHERE household_id = $1", sc.HouseholdID).Scan(&got); err != nil {
 			t.Fatal(err)

@@ -32,16 +32,6 @@ type AvoidItem struct {
 	Source         string
 }
 
-type Feedback struct {
-	ID          uuid.UUID
-	HouseholdID uuid.UUID
-	MealID      uuid.UUID
-	MemberID    uuid.NullUUID
-	Rating      int32
-	Note        string
-	CreatedAt   time.Time
-}
-
 type Household struct {
 	ID        uuid.UUID
 	Name      string
@@ -136,6 +126,16 @@ type Meal struct {
 	AddedFrom        string
 }
 
+type MealOutcome struct {
+	HouseholdID uuid.UUID
+	MealID      uuid.UUID
+	Status      string
+	Rating      *int32
+	Note        string
+	MemberID    uuid.NullUUID
+	At          time.Time
+}
+
 type MealVote struct {
 	HouseholdID uuid.UUID
 	MealID      uuid.UUID
@@ -191,17 +191,21 @@ type Profile struct {
 }
 
 type Recipe struct {
-	ID           uuid.UUID
-	HouseholdID  uuid.UUID
-	SourceMealID uuid.NullUUID
-	Title        string
-	Protein      string
-	Minutes      int32
-	OnePot       bool
-	Servings     int32
-	Data         []byte
-	CreatedBy    uuid.NullUUID
-	CreatedAt    time.Time
+	ID             uuid.UUID
+	HouseholdID    uuid.UUID
+	SourceMealID   uuid.NullUUID
+	Title          string
+	Protein        string
+	Minutes        int32
+	OnePot         bool
+	Servings       int32
+	Data           []byte
+	CreatedBy      uuid.NullUUID
+	CreatedAt      time.Time
+	Source         string
+	ParentRecipeID uuid.NullUUID
+	MealType       string
+	TitleKey       string
 }
 
 type Session struct {

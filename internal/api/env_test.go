@@ -179,7 +179,7 @@ func (e *env) assertAUnchanged() {
 	if title := e.fake.mealTitle(e.aMealID); title != "Seeded marker prompt" {
 		t.Errorf("A meal changed: %q", title)
 	}
-	for table, want := range map[string]int{"feedback": 0, "invites": 0, "household_members": 1, "recipes": 0} {
+	for table, want := range map[string]int{"meal_outcomes": 0, "invites": 0, "household_members": 1, "recipes": 0} {
 		var n int
 		if err := e.pool.QueryRow(ctx, "SELECT count(*) FROM "+table+" WHERE household_id = $1", sc.HouseholdID).Scan(&n); err != nil {
 			t.Fatal(err)

@@ -16,10 +16,15 @@ type Querier interface {
 	ActivatePlan(ctx context.Context, arg ActivatePlanParams) (int64, error)
 	AddHouseholdMember(ctx context.Context, arg AddHouseholdMemberParams) error
 	AddManualListItem(ctx context.Context, arg AddManualListItemParams) (ListItem, error)
+	// An ingredient of a recipe added to this week: a manual item with its amount.
+	AddRecipeListItem(ctx context.Context, arg AddRecipeListItemParams) (ListItem, error)
 	ArchiveActivePlan(ctx context.Context, householdID uuid.UUID) error
+	// Recipes someone rated 1: never suggested again.
+	BannedRecipeTitles(ctx context.Context, householdID uuid.UUID) ([]BannedRecipeTitlesRow, error)
 	// Takes the oldest due job; concurrent workers skip each other's rows.
 	ClaimJob(ctx context.Context) (Job, error)
 	ConfirmDraftPlan(ctx context.Context, arg ConfirmDraftPlanParams) (int64, error)
+	CountClaudeMeals(ctx context.Context, arg CountClaudeMealsParams) (int64, error)
 	CountMeals(ctx context.Context, arg CountMealsParams) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (ApiToken, error)
 	// Used inside the transaction that archives the previous active plan.
@@ -50,6 +55,7 @@ type Querier interface {
 	// Signs a member out everywhere except the session with this token hash
 	// (used after a password change).
 	DeleteOtherSessions(ctx context.Context, arg DeleteOtherSessionsParams) (int64, error)
+	DeleteOutcome(ctx context.Context, arg DeleteOutcomeParams) error
 	DeletePantryItems(ctx context.Context, householdID uuid.UUID) error
 	DeleteRecipe(ctx context.Context, arg DeleteRecipeParams) error
 	DeleteSections(ctx context.Context, householdID uuid.UUID) error
@@ -73,6 +79,7 @@ type Querier interface {
 	GetMember(ctx context.Context, id uuid.UUID) (Member, error)
 	GetMemberByEmail(ctx context.Context, email string) (Member, error)
 	GetMembership(ctx context.Context, arg GetMembershipParams) (HouseholdMember, error)
+	GetOutcome(ctx context.Context, arg GetOutcomeParams) (MealOutcome, error)
 	GetPlan(ctx context.Context, arg GetPlanParams) (Plan, error)
 	GetProfile(ctx context.Context, householdID uuid.UUID) (Profile, error)
 	GetRecipe(ctx context.Context, arg GetRecipeParams) (Recipe, error)
@@ -87,6 +94,7 @@ type Querier interface {
 	InsertUsage(ctx context.Context, arg InsertUsageParams) error
 	LatestJob(ctx context.Context, arg LatestJobParams) (Job, error)
 	LatestMealJob(ctx context.Context, arg LatestMealJobParams) (Job, error)
+	LatestRecipeJob(ctx context.Context, arg LatestRecipeJobParams) (Job, error)
 	ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([]ApiToken, error)
 	ListAvoidItems(ctx context.Context, householdID uuid.UUID) ([]AvoidItem, error)
 	ListHouseholdMembers(ctx context.Context, householdID uuid.UUID) ([]ListHouseholdMembersRow, error)
@@ -98,9 +106,12 @@ type Querier interface {
 	// Suggested day (meals without one last), then meal type, then position.
 	ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error)
 	ListMemberHouseholds(ctx context.Context, memberID uuid.UUID) ([]ListMemberHouseholdsRow, error)
+	// Meals of a plan marked not cooked whose recipe is not in another plan.
+	ListNotCooked(ctx context.Context, arg ListNotCookedParams) ([]ListNotCookedRow, error)
+	ListOutcomesForPlan(ctx context.Context, arg ListOutcomesForPlanParams) ([]MealOutcome, error)
 	ListPantryItems(ctx context.Context, householdID uuid.UUID) ([]PantryItem, error)
 	ListPendingJobs(ctx context.Context, householdID uuid.UUID) ([]Job, error)
-	// Feedback with the meal it rates, for the prompt ("last 8 weeks").
+	// Rated meals with the meal they rate, for the prompt ("last 8 weeks").
 	ListRecentFeedback(ctx context.Context, arg ListRecentFeedbackParams) ([]ListRecentFeedbackRow, error)
 	ListRecipes(ctx context.Context, householdID uuid.UUID) ([]Recipe, error)
 	// Every household's schedule settings, for the scheduler.
@@ -111,6 +122,7 @@ type Querier interface {
 	ListVotesForPlan(ctx context.Context, arg ListVotesForPlanParams) ([]ListVotesForPlanRow, error)
 	LockPlan(ctx context.Context, arg LockPlanParams) (Plan, error)
 	MaxMealPosition(ctx context.Context, arg MaxMealPositionParams) (int32, error)
+	RecipeStats(ctx context.Context, arg RecipeStatsParams) (RecipeStatsRow, error)
 	// Jobs left running by a crash: run again, or give up after three tries.
 	RecoverStaleJobs(ctx context.Context, before time.Time) (int64, error)
 	RemoveHouseholdMember(ctx context.Context, arg RemoveHouseholdMemberParams) error
@@ -120,20 +132,25 @@ type Querier interface {
 	// A job stopped by a shutdown goes back in the queue.
 	RequeueJob(ctx context.Context, id uuid.UUID) error
 	RevokeAPIToken(ctx context.Context, arg RevokeAPITokenParams) error
+	// The library with ratings: q matches the title or an ingredient.
+	SearchRecipes(ctx context.Context, arg SearchRecipesParams) ([]SearchRecipesRow, error)
 	SetListItemChecked(ctx context.Context, arg SetListItemCheckedParams) (ListItem, error)
 	// Only Check at home items can be answered; NULL clears the answer.
 	SetListItemHaveIt(ctx context.Context, arg SetListItemHaveItParams) (ListItem, error)
 	SetMealPosition(ctx context.Context, arg SetMealPositionParams) error
+	SetMealRecipe(ctx context.Context, arg SetMealRecipeParams) error
 	SetServerAdmin(ctx context.Context, arg SetServerAdminParams) error
 	SwitchSessionHousehold(ctx context.Context, arg SwitchSessionHouseholdParams) error
 	TouchAPIToken(ctx context.Context, id uuid.UUID) error
 	UpdateIngredient(ctx context.Context, arg UpdateIngredientParams) (int64, error)
 	UpdateMemberPassword(ctx context.Context, arg UpdateMemberPasswordParams) error
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
-	UpsertFeedback(ctx context.Context, arg UpsertFeedbackParams) (Feedback, error)
+	// A meal Claude suggests again reuses its recipe (same type and title).
+	UpsertClaudeRecipe(ctx context.Context, arg UpsertClaudeRecipeParams) (uuid.UUID, error)
 	// Rebuilds keep ticks: on conflict only the text/section change, never checked.
 	// An item that leaves the pantry forgets its Have it / Buy answer.
 	UpsertGeneratedListItem(ctx context.Context, arg UpsertGeneratedListItemParams) (ListItem, error)
+	UpsertOutcome(ctx context.Context, arg UpsertOutcomeParams) (MealOutcome, error)
 	UpsertVote(ctx context.Context, arg UpsertVoteParams) error
 	UsageByHousehold(ctx context.Context, since time.Time) ([]UsageByHouseholdRow, error)
 }

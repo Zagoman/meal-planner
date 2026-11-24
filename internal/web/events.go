@@ -22,6 +22,8 @@ func sseNames(e events.Event) []string {
 		return []string{"meal.updated", "meal-" + e.MealID.String()}
 	case events.PlanUpdated:
 		return []string{"plan.updated"}
+	case events.RecipeUpdated:
+		return []string{"recipe-" + e.RecipeID.String()}
 	case events.JobFailed:
 		names := []string{"job.failed"}
 		if e.MealID != uuid.Nil {
@@ -67,6 +69,8 @@ func (h *handlers) eventStream(w http.ResponseWriter, r *http.Request) {
 				data = e.ItemID.String()
 			} else if e.MealID != uuid.Nil {
 				data = e.MealID.String()
+			} else if e.RecipeID != uuid.Nil {
+				data = e.RecipeID.String()
 			}
 			for _, name := range sseNames(e) {
 				if err := writeSSE(w, name, data); err != nil {

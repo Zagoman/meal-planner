@@ -202,12 +202,3 @@ func (h *handlers) savePantry(w http.ResponseWriter, r *http.Request) {
 	}
 	h.render(w, r, http.StatusOK, PantryForm(items, true))
 }
-
-func (h *handlers) recipesPage(w http.ResponseWriter, r *http.Request) {
-	recipes, err := h.svc.Feedback.Recipes(r.Context(), scope(r))
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
-	h.render(w, r, http.StatusOK, RecipesPage(recipes))
-}

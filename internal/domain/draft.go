@@ -14,6 +14,7 @@ const (
 	JobSwap        JobKind = "swap"         // replace one draft meal
 	JobAsk         JobKind = "ask"          // Ask Claude: change the whole draft
 	JobAutoConfirm JobKind = "auto_confirm" // swap thumbs-down meals, then confirm
+	JobTweak       JobKind = "tweak"        // a new version of a library recipe
 )
 
 type JobStatus string
@@ -58,6 +59,9 @@ type DraftCard struct {
 	// household's auto-confirm time).
 	ConfirmsAt time.Time `json:"confirms_at"`
 	Error      string    `json:"error,omitempty"`
+	// RateFirst: the plan that is ending has meals without an answer, so
+	// "Start review" opens the rating step first.
+	RateFirst bool `json:"rate_first"`
 }
 
 // Vote is one member's thumbs up (+1) or down (-1) on a draft meal.
@@ -99,4 +103,7 @@ type Review struct {
 	// one's error.
 	Asking   bool   `json:"asking"`
 	AskError string `json:"ask_error,omitempty"`
+	// NotCooked are last week's meals marked not cooked; they go into a
+	// draft only when added back.
+	NotCooked []NotCookedMeal `json:"not_cooked"`
 }

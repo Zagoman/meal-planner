@@ -335,10 +335,12 @@ type Feedback struct {
 }
 
 type Recipe struct {
-	ID           uuid.UUID  `json:"id"`
-	SourceMealID *uuid.UUID `json:"source_meal_id,omitempty"`
-	Meal         Meal       `json:"meal"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID           uuid.UUID    `json:"id"`
+	SourceMealID *uuid.UUID   `json:"source_meal_id,omitempty"`
+	Source       RecipeSource `json:"source"`
+	ParentID     *uuid.UUID   `json:"parent_recipe_id,omitempty"` // set on a tweaked version
+	Meal         Meal         `json:"meal"`
+	CreatedAt    time.Time    `json:"created_at"`
 }
 
 // UsageRow is token usage for one household over a period.

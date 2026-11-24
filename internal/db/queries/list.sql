@@ -45,3 +45,8 @@ DELETE FROM list_items WHERE id = $1 AND household_id = $2;
 UPDATE list_items SET have_it = sqlc.narg(have_it), updated_at = now()
 WHERE id = sqlc.arg(id) AND household_id = sqlc.arg(household_id) AND check_home
 RETURNING *;
+
+-- name: AddRecipeListItem :one
+-- An ingredient of a recipe added to this week: a manual item with its amount.
+INSERT INTO list_items (household_id, plan_id, name, normalized_name, qty_text, section, is_manual, added_by)
+VALUES ($1, $2, $3, $4, $5, $6, true, $7) RETURNING *;

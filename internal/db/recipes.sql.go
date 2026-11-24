@@ -12,21 +12,60 @@ import (
 	"github.com/google/uuid"
 )
 
+const bannedRecipeTitles = `-- name: BannedRecipeTitles :many
+SELECT DISTINCT r.meal_type, r.title
+FROM recipes r
+JOIN meals m ON m.recipe_id = r.id AND m.household_id = r.household_id
+JOIN meal_outcomes o ON o.meal_id = m.id AND o.household_id = m.household_id
+WHERE r.household_id = $1 AND o.rating = 1
+`
+
+type BannedRecipeTitlesRow struct {
+	MealType string
+	Title    string
+}
+
+// Recipes someone rated 1: never suggested again.
+func (q *Queries) BannedRecipeTitles(ctx context.Context, householdID uuid.UUID) ([]BannedRecipeTitlesRow, error) {
+	rows, err := q.db.Query(ctx, bannedRecipeTitles, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BannedRecipeTitlesRow{}
+	for rows.Next() {
+		var i BannedRecipeTitlesRow
+		if err := rows.Scan(&i.MealType, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createRecipe = `-- name: CreateRecipe :one
-INSERT INTO recipes (household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at
+INSERT INTO recipes (household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by,
+                     source, parent_recipe_id, meal_type, title_key)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $13, $11, $12) RETURNING id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key
 `
 
 type CreateRecipeParams struct {
-	HouseholdID  uuid.UUID
-	SourceMealID uuid.NullUUID
-	Title        string
-	Protein      string
-	Minutes      int32
-	OnePot       bool
-	Servings     int32
-	Data         []byte
-	CreatedBy    uuid.NullUUID
+	HouseholdID    uuid.UUID
+	SourceMealID   uuid.NullUUID
+	Title          string
+	Protein        string
+	Minutes        int32
+	OnePot         bool
+	Servings       int32
+	Data           []byte
+	CreatedBy      uuid.NullUUID
+	Source         string
+	MealType       string
+	TitleKey       string
+	ParentRecipeID uuid.NullUUID
 }
 
 func (q *Queries) CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Recipe, error) {
@@ -40,6 +79,10 @@ func (q *Queries) CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Rec
 		arg.Servings,
 		arg.Data,
 		arg.CreatedBy,
+		arg.Source,
+		arg.MealType,
+		arg.TitleKey,
+		arg.ParentRecipeID,
 	)
 	var i Recipe
 	err := row.Scan(
@@ -54,8 +97,26 @@ func (q *Queries) CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Rec
 		&i.Data,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.Source,
+		&i.ParentRecipeID,
+		&i.MealType,
+		&i.TitleKey,
 	)
 	return i, err
+}
+
+const deleteOutcome = `-- name: DeleteOutcome :exec
+DELETE FROM meal_outcomes WHERE meal_id = $1 AND household_id = $2
+`
+
+type DeleteOutcomeParams struct {
+	MealID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) DeleteOutcome(ctx context.Context, arg DeleteOutcomeParams) error {
+	_, err := q.db.Exec(ctx, deleteOutcome, arg.MealID, arg.HouseholdID)
+	return err
 }
 
 const deleteRecipe = `-- name: DeleteRecipe :exec
@@ -72,8 +133,32 @@ func (q *Queries) DeleteRecipe(ctx context.Context, arg DeleteRecipeParams) erro
 	return err
 }
 
+const getOutcome = `-- name: GetOutcome :one
+SELECT household_id, meal_id, status, rating, note, member_id, at FROM meal_outcomes WHERE meal_id = $1 AND household_id = $2
+`
+
+type GetOutcomeParams struct {
+	MealID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) GetOutcome(ctx context.Context, arg GetOutcomeParams) (MealOutcome, error) {
+	row := q.db.QueryRow(ctx, getOutcome, arg.MealID, arg.HouseholdID)
+	var i MealOutcome
+	err := row.Scan(
+		&i.HouseholdID,
+		&i.MealID,
+		&i.Status,
+		&i.Rating,
+		&i.Note,
+		&i.MemberID,
+		&i.At,
+	)
+	return i, err
+}
+
 const getRecipe = `-- name: GetRecipe :one
-SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at FROM recipes WHERE id = $1 AND household_id = $2
+SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key FROM recipes WHERE id = $1 AND household_id = $2
 `
 
 type GetRecipeParams struct {
@@ -96,6 +181,10 @@ func (q *Queries) GetRecipe(ctx context.Context, arg GetRecipeParams) (Recipe, e
 		&i.Data,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.Source,
+		&i.ParentRecipeID,
+		&i.MealType,
+		&i.TitleKey,
 	)
 	return i, err
 }
@@ -126,12 +215,134 @@ func (q *Queries) InsertUsage(ctx context.Context, arg InsertUsageParams) error 
 	return err
 }
 
+const latestRecipeJob = `-- name: LatestRecipeJob :one
+SELECT id, household_id, kind, status, dedupe_key, plan_id, meal_id, member_id, payload, result, error, attempts, run_after, created_at, started_at, finished_at FROM jobs WHERE household_id = $1 AND kind = 'tweak' AND payload ->> 'recipe_id' = $2::text
+ORDER BY created_at DESC LIMIT 1
+`
+
+type LatestRecipeJobParams struct {
+	HouseholdID uuid.UUID
+	RecipeID    string
+}
+
+func (q *Queries) LatestRecipeJob(ctx context.Context, arg LatestRecipeJobParams) (Job, error) {
+	row := q.db.QueryRow(ctx, latestRecipeJob, arg.HouseholdID, arg.RecipeID)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.Kind,
+		&i.Status,
+		&i.DedupeKey,
+		&i.PlanID,
+		&i.MealID,
+		&i.MemberID,
+		&i.Payload,
+		&i.Result,
+		&i.Error,
+		&i.Attempts,
+		&i.RunAfter,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
+const listNotCooked = `-- name: ListNotCooked :many
+SELECT m.id AS meal_id, m.recipe_id, m.title, m.meal_type
+FROM meals m JOIN meal_outcomes o ON o.meal_id = m.id AND o.household_id = m.household_id
+WHERE m.plan_id = $1 AND m.household_id = $2 AND o.status = 'not_cooked'
+  AND m.recipe_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM meals d WHERE d.plan_id = $3 AND d.household_id = m.household_id
+                  AND d.recipe_id = m.recipe_id)
+ORDER BY m.position
+`
+
+type ListNotCookedParams struct {
+	PlanID      uuid.UUID
+	HouseholdID uuid.UUID
+	OtherPlanID uuid.UUID
+}
+
+type ListNotCookedRow struct {
+	MealID   uuid.UUID
+	RecipeID uuid.NullUUID
+	Title    string
+	MealType string
+}
+
+// Meals of a plan marked not cooked whose recipe is not in another plan.
+func (q *Queries) ListNotCooked(ctx context.Context, arg ListNotCookedParams) ([]ListNotCookedRow, error) {
+	rows, err := q.db.Query(ctx, listNotCooked, arg.PlanID, arg.HouseholdID, arg.OtherPlanID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNotCookedRow{}
+	for rows.Next() {
+		var i ListNotCookedRow
+		if err := rows.Scan(
+			&i.MealID,
+			&i.RecipeID,
+			&i.Title,
+			&i.MealType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOutcomesForPlan = `-- name: ListOutcomesForPlan :many
+SELECT o.household_id, o.meal_id, o.status, o.rating, o.note, o.member_id, o.at FROM meal_outcomes o
+JOIN meals m ON m.id = o.meal_id AND m.household_id = o.household_id
+WHERE m.plan_id = $1 AND o.household_id = $2
+`
+
+type ListOutcomesForPlanParams struct {
+	PlanID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) ListOutcomesForPlan(ctx context.Context, arg ListOutcomesForPlanParams) ([]MealOutcome, error) {
+	rows, err := q.db.Query(ctx, listOutcomesForPlan, arg.PlanID, arg.HouseholdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MealOutcome{}
+	for rows.Next() {
+		var i MealOutcome
+		if err := rows.Scan(
+			&i.HouseholdID,
+			&i.MealID,
+			&i.Status,
+			&i.Rating,
+			&i.Note,
+			&i.MemberID,
+			&i.At,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentFeedback = `-- name: ListRecentFeedback :many
-SELECT f.rating, f.note, f.created_at, m.title, m.protein
-FROM feedback f
-JOIN meals m ON m.id = f.meal_id AND m.household_id = f.household_id
-WHERE f.household_id = $1 AND f.created_at >= $2
-ORDER BY f.created_at DESC
+SELECT o.rating::int AS rating, o.note, o.at AS created_at, m.title, m.protein
+FROM meal_outcomes o
+JOIN meals m ON m.id = o.meal_id AND m.household_id = o.household_id
+WHERE o.household_id = $1 AND o.at >= $2 AND o.rating IS NOT NULL
+ORDER BY o.at DESC
 `
 
 type ListRecentFeedbackParams struct {
@@ -147,7 +358,7 @@ type ListRecentFeedbackRow struct {
 	Protein   string
 }
 
-// Feedback with the meal it rates, for the prompt ("last 8 weeks").
+// Rated meals with the meal they rate, for the prompt ("last 8 weeks").
 func (q *Queries) ListRecentFeedback(ctx context.Context, arg ListRecentFeedbackParams) ([]ListRecentFeedbackRow, error) {
 	rows, err := q.db.Query(ctx, listRecentFeedback, arg.HouseholdID, arg.Since)
 	if err != nil {
@@ -175,7 +386,7 @@ func (q *Queries) ListRecentFeedback(ctx context.Context, arg ListRecentFeedback
 }
 
 const listRecipes = `-- name: ListRecipes :many
-SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at FROM recipes WHERE household_id = $1 ORDER BY created_at DESC
+SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key FROM recipes WHERE household_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) ListRecipes(ctx context.Context, householdID uuid.UUID) ([]Recipe, error) {
@@ -199,6 +410,10 @@ func (q *Queries) ListRecipes(ctx context.Context, householdID uuid.UUID) ([]Rec
 			&i.Data,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.Source,
+			&i.ParentRecipeID,
+			&i.MealType,
+			&i.TitleKey,
 		); err != nil {
 			return nil, err
 		}
@@ -210,38 +425,214 @@ func (q *Queries) ListRecipes(ctx context.Context, householdID uuid.UUID) ([]Rec
 	return items, nil
 }
 
-const upsertFeedback = `-- name: UpsertFeedback :one
-INSERT INTO feedback (household_id, meal_id, member_id, rating, note)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (meal_id, member_id) DO UPDATE SET rating = EXCLUDED.rating, note = EXCLUDED.note, created_at = now()
-RETURNING id, household_id, meal_id, member_id, rating, note, created_at
+const recipeStats = `-- name: RecipeStats :one
+SELECT coalesce(avg(o.rating), 0)::float8 AS rating,
+       count(o.rating)::int AS ratings,
+       (count(o.meal_id) FILTER (WHERE o.status = 'cooked'))::int AS cooked,
+       coalesce((SELECT o2.note FROM meal_outcomes o2 JOIN meals m2 ON m2.id = o2.meal_id AND m2.household_id = o2.household_id
+                 WHERE m2.recipe_id = $1 AND o2.household_id = $2 AND o2.note <> ''
+                 ORDER BY o2.at DESC LIMIT 1), '')::text AS latest_note
+FROM meals m JOIN meal_outcomes o ON o.meal_id = m.id AND o.household_id = m.household_id
+WHERE m.recipe_id = $1 AND m.household_id = $2
 `
 
-type UpsertFeedbackParams struct {
+type RecipeStatsParams struct {
+	RecipeID    uuid.NullUUID
 	HouseholdID uuid.UUID
-	MealID      uuid.UUID
-	MemberID    uuid.NullUUID
-	Rating      int32
-	Note        string
 }
 
-func (q *Queries) UpsertFeedback(ctx context.Context, arg UpsertFeedbackParams) (Feedback, error) {
-	row := q.db.QueryRow(ctx, upsertFeedback,
+type RecipeStatsRow struct {
+	Rating     float64
+	Ratings    int32
+	Cooked     int32
+	LatestNote string
+}
+
+func (q *Queries) RecipeStats(ctx context.Context, arg RecipeStatsParams) (RecipeStatsRow, error) {
+	row := q.db.QueryRow(ctx, recipeStats, arg.RecipeID, arg.HouseholdID)
+	var i RecipeStatsRow
+	err := row.Scan(
+		&i.Rating,
+		&i.Ratings,
+		&i.Cooked,
+		&i.LatestNote,
+	)
+	return i, err
+}
+
+const searchRecipes = `-- name: SearchRecipes :many
+SELECT r.id, r.title, r.meal_type, r.minutes, r.source, r.parent_recipe_id, r.created_at,
+       coalesce(avg(o.rating), 0)::float8 AS rating,
+       count(o.rating)::int AS ratings,
+       (count(o.meal_id) FILTER (WHERE o.status = 'cooked'))::int AS cooked
+FROM recipes r
+LEFT JOIN meals m ON m.recipe_id = r.id AND m.household_id = r.household_id
+LEFT JOIN meal_outcomes o ON o.meal_id = m.id AND o.household_id = m.household_id
+WHERE r.household_id = $1
+  AND ($2::text = ''
+       OR r.title ILIKE '%' || $2 || '%'
+       OR EXISTS (SELECT 1 FROM jsonb_array_elements(r.data -> 'ingredients') i
+                  WHERE i ->> 'name' ILIKE '%' || $2 || '%'))
+  AND ($3::text = '' OR r.meal_type = $3)
+  AND (NOT $4::bool OR r.source <> 'claude')
+GROUP BY r.id
+HAVING (NOT $5::bool OR avg(o.rating) >= 4)
+ORDER BY (count(o.meal_id) FILTER (WHERE o.status = 'cooked')) DESC, lower(r.title)
+LIMIT 200
+`
+
+type SearchRecipesParams struct {
+	HouseholdID uuid.UUID
+	Q           string
+	MealType    string
+	Own         bool
+	Rated4      bool
+}
+
+type SearchRecipesRow struct {
+	ID             uuid.UUID
+	Title          string
+	MealType       string
+	Minutes        int32
+	Source         string
+	ParentRecipeID uuid.NullUUID
+	CreatedAt      time.Time
+	Rating         float64
+	Ratings        int32
+	Cooked         int32
+}
+
+// The library with ratings: q matches the title or an ingredient.
+func (q *Queries) SearchRecipes(ctx context.Context, arg SearchRecipesParams) ([]SearchRecipesRow, error) {
+	rows, err := q.db.Query(ctx, searchRecipes,
+		arg.HouseholdID,
+		arg.Q,
+		arg.MealType,
+		arg.Own,
+		arg.Rated4,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchRecipesRow{}
+	for rows.Next() {
+		var i SearchRecipesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.MealType,
+			&i.Minutes,
+			&i.Source,
+			&i.ParentRecipeID,
+			&i.CreatedAt,
+			&i.Rating,
+			&i.Ratings,
+			&i.Cooked,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setMealRecipe = `-- name: SetMealRecipe :exec
+UPDATE meals SET recipe_id = $3 WHERE id = $1 AND household_id = $2
+`
+
+type SetMealRecipeParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+	RecipeID    uuid.NullUUID
+}
+
+func (q *Queries) SetMealRecipe(ctx context.Context, arg SetMealRecipeParams) error {
+	_, err := q.db.Exec(ctx, setMealRecipe, arg.ID, arg.HouseholdID, arg.RecipeID)
+	return err
+}
+
+const upsertClaudeRecipe = `-- name: UpsertClaudeRecipe :one
+INSERT INTO recipes (household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by,
+                     source, meal_type, title_key)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'claude', $10, $11)
+ON CONFLICT (household_id, meal_type, title_key) WHERE source = 'claude' AND parent_recipe_id IS NULL
+DO UPDATE SET title = recipes.title
+RETURNING id
+`
+
+type UpsertClaudeRecipeParams struct {
+	HouseholdID  uuid.UUID
+	SourceMealID uuid.NullUUID
+	Title        string
+	Protein      string
+	Minutes      int32
+	OnePot       bool
+	Servings     int32
+	Data         []byte
+	CreatedBy    uuid.NullUUID
+	MealType     string
+	TitleKey     string
+}
+
+// A meal Claude suggests again reuses its recipe (same type and title).
+func (q *Queries) UpsertClaudeRecipe(ctx context.Context, arg UpsertClaudeRecipeParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, upsertClaudeRecipe,
+		arg.HouseholdID,
+		arg.SourceMealID,
+		arg.Title,
+		arg.Protein,
+		arg.Minutes,
+		arg.OnePot,
+		arg.Servings,
+		arg.Data,
+		arg.CreatedBy,
+		arg.MealType,
+		arg.TitleKey,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const upsertOutcome = `-- name: UpsertOutcome :one
+INSERT INTO meal_outcomes (household_id, meal_id, status, rating, note, member_id, at)
+VALUES ($1, $2, $3, $5, $4, $6, now())
+ON CONFLICT (meal_id) DO UPDATE SET status = EXCLUDED.status, rating = EXCLUDED.rating,
+    note = EXCLUDED.note, member_id = EXCLUDED.member_id, at = now()
+RETURNING household_id, meal_id, status, rating, note, member_id, at
+`
+
+type UpsertOutcomeParams struct {
+	HouseholdID uuid.UUID
+	MealID      uuid.UUID
+	Status      string
+	Note        string
+	Rating      *int32
+	MemberID    uuid.NullUUID
+}
+
+func (q *Queries) UpsertOutcome(ctx context.Context, arg UpsertOutcomeParams) (MealOutcome, error) {
+	row := q.db.QueryRow(ctx, upsertOutcome,
 		arg.HouseholdID,
 		arg.MealID,
-		arg.MemberID,
-		arg.Rating,
+		arg.Status,
 		arg.Note,
+		arg.Rating,
+		arg.MemberID,
 	)
-	var i Feedback
+	var i MealOutcome
 	err := row.Scan(
-		&i.ID,
 		&i.HouseholdID,
 		&i.MealID,
-		&i.MemberID,
+		&i.Status,
 		&i.Rating,
 		&i.Note,
-		&i.CreatedAt,
+		&i.MemberID,
+		&i.At,
 	)
 	return i, err
 }

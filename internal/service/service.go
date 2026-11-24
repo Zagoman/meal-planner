@@ -71,6 +71,35 @@ type Drafts interface {
 	Confirm(ctx context.Context, s domain.Scope) (domain.Plan, error)
 }
 
+// Outcomes is the rating step: what happened to each meal of the plan
+// that is ending.
+type Outcomes interface {
+	// RateList is the active plan's meals with their outcomes;
+	// domain.ErrNotFound without an active plan.
+	RateList(ctx context.Context, s domain.Scope) (domain.RateList, error)
+	// SetOutcome rates a meal (cooked), marks it not cooked, clears the
+	// answer, or changes the note of an existing answer.
+	SetOutcome(ctx context.Context, s domain.Scope, mealID uuid.UUID, in domain.OutcomeInput) (domain.RateMeal, error)
+}
+
+// Library is the household's recipes: every meal Claude planned, tweaked
+// versions, and (from window 5) recipes the household adds.
+type Library interface {
+	// Search lists recipes matching q (title or ingredient) and a filter:
+	// "all", "rated4", "own" or a meal type.
+	Search(ctx context.Context, s domain.Scope, q string, filter domain.RecipeFilter) ([]domain.RecipeSummary, error)
+	RecipeDetail(ctx context.Context, s domain.Scope, recipeID uuid.UUID) (domain.RecipeDetail, error)
+	// RequestTweak queues a tweak job: Claude changes the recipe and the
+	// result is saved as a new recipe with parent_recipe_id set.
+	RequestTweak(ctx context.Context, s domain.Scope, recipeID uuid.UUID, prompt string) (domain.Job, error)
+	// AddToNextWeek adds the recipe to the draft, making an empty draft if
+	// there is none. from is FromLibrary or FromNotCooked.
+	AddToNextWeek(ctx context.Context, s domain.Scope, recipeID uuid.UUID, from domain.MealSource) (domain.DraftMeal, error)
+	// AddToThisWeek puts the recipe's ingredients that are not on the
+	// active list yet on it, unticked. It returns how many were added.
+	AddToThisWeek(ctx context.Context, s domain.Scope, recipeID uuid.UUID) (int, error)
+}
+
 // Lists is the shopping list of the active plan.
 type Lists interface {
 	Active(ctx context.Context, s domain.Scope) (domain.List, error)
@@ -143,6 +172,8 @@ type Services struct {
 	Profiles   Profiles
 	Plans      Plans
 	Drafts     Drafts
+	Outcomes   Outcomes
+	Library    Library
 	Lists      Lists
 	Feedback   Feedback
 }

@@ -17,6 +17,8 @@ type Unimplemented struct{}
 var (
 	_ Plans      = Unimplemented{}
 	_ Drafts     = Unimplemented{}
+	_ Outcomes   = Unimplemented{}
+	_ Library    = Unimplemented{}
 	_ Lists      = Unimplemented{}
 	_ Profiles   = Unimplemented{}
 	_ Feedback   = Unimplemented{}
@@ -27,7 +29,7 @@ var (
 // NewUnimplemented returns a Services where every method is unimplemented.
 func NewUnimplemented() Services {
 	u := Unimplemented{}
-	return Services{Auth: u, Households: u, Profiles: u, Plans: u, Drafts: u, Lists: u, Feedback: u}
+	return Services{Auth: u, Households: u, Profiles: u, Plans: u, Drafts: u, Outcomes: u, Library: u, Lists: u, Feedback: u}
 }
 
 var errNI = domain.ErrNotImplemented
@@ -159,4 +161,25 @@ func (Unimplemented) ListPreview(context.Context, domain.Scope) (domain.List, er
 }
 func (Unimplemented) Confirm(context.Context, domain.Scope) (domain.Plan, error) {
 	return domain.Plan{}, errNI
+}
+func (Unimplemented) RateList(context.Context, domain.Scope) (domain.RateList, error) {
+	return domain.RateList{}, errNI
+}
+func (Unimplemented) SetOutcome(context.Context, domain.Scope, uuid.UUID, domain.OutcomeInput) (domain.RateMeal, error) {
+	return domain.RateMeal{}, errNI
+}
+func (Unimplemented) Search(context.Context, domain.Scope, string, domain.RecipeFilter) ([]domain.RecipeSummary, error) {
+	return nil, errNI
+}
+func (Unimplemented) RecipeDetail(context.Context, domain.Scope, uuid.UUID) (domain.RecipeDetail, error) {
+	return domain.RecipeDetail{}, errNI
+}
+func (Unimplemented) RequestTweak(context.Context, domain.Scope, uuid.UUID, string) (domain.Job, error) {
+	return domain.Job{}, errNI
+}
+func (Unimplemented) AddToNextWeek(context.Context, domain.Scope, uuid.UUID, domain.MealSource) (domain.DraftMeal, error) {
+	return domain.DraftMeal{}, errNI
+}
+func (Unimplemented) AddToThisWeek(context.Context, domain.Scope, uuid.UUID) (int, error) {
+	return 0, errNI
 }

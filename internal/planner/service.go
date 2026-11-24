@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -96,7 +97,7 @@ func (s *Service) Generate(ctx context.Context, sc domain.Scope, prompt string) 
 	if err != nil {
 		return domain.Plan{}, err
 	}
-	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt}
+	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt, Banned: hh.bannedLines()}
 	if hh.profile.TotalMeals() == 0 {
 		return domain.Plan{}, &domain.ValidationError{Problems: []string{"the profile plans no meals; set at least one meal per week"}}
 	}
@@ -199,7 +200,7 @@ func (s *Service) SwapMeal(ctx context.Context, sc domain.Scope, planID uuid.UUI
 		return domain.Meal{}, err
 	}
 	in := SwapInput{
-		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt},
+		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt, Banned: hh.bannedLines()},
 		MealType:    domain.MealDinner, Day: day, OtherMeals: others,
 	}
 	if old != nil {
@@ -385,7 +386,39 @@ func insertMeal(ctx context.Context, q *db.Queries, householdID, planID uuid.UUI
 	if err != nil {
 		return db.Meal{}, fmt.Errorf("create meal: %w", err)
 	}
-	return meal, insertMealParts(ctx, q, householdID, meal.ID, m)
+	if err := insertMealParts(ctx, q, householdID, meal.ID, m); err != nil {
+		return db.Meal{}, err
+	}
+	if err := linkRecipe(ctx, q, householdID, meal.ID, m); err != nil {
+		return db.Meal{}, err
+	}
+	return meal, nil
+}
+
+// linkRecipe saves a meal Claude made to the library (or finds the recipe
+// it made before under the same type and title) and links the meal to it.
+func linkRecipe(ctx context.Context, q *db.Queries, householdID, mealID uuid.UUID, m domain.MealJSON) error {
+	saved := m
+	saved.Day = nil
+	if saved.AfterBabyPortion == nil {
+		saved.AfterBabyPortion = []string{}
+	}
+	data, err := json.Marshal(saved)
+	if err != nil {
+		return fmt.Errorf("recipe data: %w", err)
+	}
+	id, err := q.UpsertClaudeRecipe(ctx, db.UpsertClaudeRecipeParams{
+		HouseholdID: householdID, SourceMealID: uuid.NullUUID{UUID: mealID, Valid: true},
+		Title: m.Title, Protein: string(m.Protein), Minutes: clamp32(m.Minutes), OnePot: m.OnePot,
+		Servings: clamp32(m.Servings), Data: data, MealType: string(m.MealType), TitleKey: domain.TitleKey(m.Title),
+	})
+	if err != nil {
+		return fmt.Errorf("save recipe: %w", err)
+	}
+	if err := q.SetMealRecipe(ctx, db.SetMealRecipeParams{ID: mealID, HouseholdID: householdID, RecipeID: uuid.NullUUID{UUID: id, Valid: true}}); err != nil {
+		return fmt.Errorf("link recipe: %w", err)
+	}
+	return nil
 }
 
 // replaceMeal gives an existing meal new content from Claude, keeping its
@@ -419,7 +452,10 @@ func replaceMeal(ctx context.Context, q *db.Queries, householdID, mealID uuid.UU
 	if err := q.DeleteVotesForMeal(ctx, db.DeleteVotesForMealParams(ref)); err != nil {
 		return fmt.Errorf("delete votes: %w", err)
 	}
-	return insertMealParts(ctx, q, householdID, mealID, m)
+	if err := insertMealParts(ctx, q, householdID, mealID, m); err != nil {
+		return err
+	}
+	return linkRecipe(ctx, q, householdID, mealID, m)
 }
 
 func insertMealParts(ctx context.Context, q *db.Queries, householdID, mealID uuid.UUID, m domain.MealJSON) error {
@@ -519,6 +555,15 @@ type household struct {
 	profile  domain.Profile
 	sections []domain.Section
 	feedback []FeedbackLine
+	// banned are meals never to plan, by title key: recipes rated 1 and
+	// last week's meals marked not cooked. The value says why.
+	banned map[string]Banned
+}
+
+// Banned is a meal Claude must not plan.
+type Banned struct {
+	Title  string
+	Reason string // "rated 1" or "not cooked last week"
 }
 
 func (h household) rules(swap *SwapRule) Rules {
@@ -526,7 +571,17 @@ func (h household) rules(swap *SwapRule) Rules {
 	for i, s := range h.sections {
 		keys[i] = s.Key
 	}
-	return Rules{Profile: h.profile, SectionKeys: keys, Swap: swap}
+	return Rules{Profile: h.profile, SectionKeys: keys, Swap: swap, Banned: h.banned}
+}
+
+// bannedLines lists the banned meals for a prompt.
+func (h household) bannedLines() []string {
+	out := make([]string, 0, len(h.banned))
+	for _, b := range h.banned {
+		out = append(out, fmt.Sprintf("%q (%s)", b.Title, b.Reason))
+	}
+	slices.Sort(out)
+	return out
 }
 
 func (s *Service) loadHousehold(ctx context.Context, q *db.Queries, householdID uuid.UUID) (household, error) {
@@ -561,6 +616,25 @@ func (s *Service) loadHousehold(ctx context.Context, q *db.Queries, householdID 
 		h.feedback = append(h.feedback, FeedbackLine{
 			Title: f.Title, Protein: f.Protein, Rating: int(f.Rating), Note: f.Note, At: f.CreatedAt,
 		})
+	}
+	h.banned = map[string]Banned{}
+	rated1, err := q.BannedRecipeTitles(ctx, householdID)
+	if err != nil {
+		return h, fmt.Errorf("rated 1: %w", err)
+	}
+	for _, r := range rated1 {
+		h.banned[domain.TitleKey(r.Title)] = Banned{Title: r.Title, Reason: "rated 1"}
+	}
+	if active, err := q.GetActivePlan(ctx, householdID); err == nil {
+		notCooked, err := q.ListNotCooked(ctx, db.ListNotCookedParams{PlanID: active.ID, HouseholdID: householdID})
+		if err != nil {
+			return h, fmt.Errorf("not cooked: %w", err)
+		}
+		for _, m := range notCooked {
+			h.banned[domain.TitleKey(m.Title)] = Banned{Title: m.Title, Reason: "not cooked last week"}
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return h, fmt.Errorf("active plan: %w", err)
 	}
 	return h, nil
 }

@@ -6,8 +6,10 @@ household profile), builds a shopping list grouped by shop section, and
 members tick it off live on their phones.
 
 The build plan is the dev handoff (wireframes on the design canvas), done in
-five windows; `HANDOVER.md` says which windows are done, what is next and the
-known issues.
+five windows; `HANDOVER.md` says which windows are done and what is next.
+**`GAPS.md` lists every known gap and deviation from the handoff: add a row
+for anything you find missing, rough or different (even if you fix it later),
+and move it to Fixed with the commit when it is done.**
 
 One Go binary: JSON API under `/api/*` (bearer token), server-rendered web UI
 everywhere else (session cookie, templ + htmx + SSE), Postgres.
@@ -82,6 +84,10 @@ new files (`00003_...sql`), never edits to an applied one.
 - Meals have a `meal_type` (breakfast, lunch, dinner, baking, other). The
   profile's `meal_targets` sets how many of each a week holds; a plan must
   match them exactly.
+- Every meal Claude plans is saved to the recipe library (`linkRecipe`) and
+  linked by `meals.recipe_id`. Outcomes (`meal_outcomes`, one per meal) say
+  cooked + rating or not cooked; recipes rated 1 and last week's not-cooked
+  meals are banned in prompts and validation (`household.banned`).
 - The avoid list is the `avoid_items` table (unique per household on
   `normalized_name`), not a profile column.
 - Pantry ingredients become list items with `check_home = true` in their real
