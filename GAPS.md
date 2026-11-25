@@ -78,3 +78,4 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | — | Swap and remove icons drew wrong (joined SVG paths). | W2 (before commit) |
 | — | "Add to this week" with another household's recipe id answered 409 instead of 404 when the caller had no plan (found by the route walk in the window 4 isolation test). | W4 (before commit) |
 | — | The setup questions showed "1 of 4" under the question instead of above it. | W4 (before commit) |
+| — | A 31 MB local build of the server binary (`server`, from `go build ./cmd/...`) was committed in `6fdd950` and pushed. Removed and ignored; it is still in the git history unless that is rewritten. | after W4 |

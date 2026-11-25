@@ -7,3 +7,6 @@ coverage.out
 /playwright-report/
 /test-results/
 node_modules/
+
+# go build ./cmd/... writes the binary here
+/server
