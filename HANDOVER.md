@@ -280,6 +280,13 @@ password").
   each of B's ids and never gets a success with content, and receives no
   SSE events.
 
+**Deployed** 2026-11-25 as `6fdd950179ee`. Dump first:
+`mealplanner-20261125-094829.dump`. Migration 5 applied; the existing
+household is marked set up (no setup questions). The app logs "RESEND_API_KEY
+is not set: emails are not sent" until the email steps below are done, and
+`make deploy` warns that the server's `compose.yml` differs until the
+homelab patch is applied. Plans unchanged (1 draft, 1 active, 5 archived).
+
 **Needs you before email works** (G-21): a Resend account with sending
 access for liluhome.dk, the SPF/DKIM/DMARC DNS records Resend gives you,
 `vault_mealplanner_resend_api_key` in the Ansible vault, and
