@@ -18,7 +18,7 @@ templ WeekPage(p domain.Plan, hasPlan bool, card domain.DraftCard) {
 }
 
 templ WeekBody(p domain.Plan, hasPlan bool) {
-	<div id="week" hx-get="/week" hx-select="#week" hx-trigger="sse:plan.updated" hx-swap="outerHTML">
+	<div id="week" hx-get="/week" hx-select="#week" hx-trigger="sse:plan.updated" hx-swap="outerHTML" hx-disinherit="*">
 		if !hasPlan {
 			<p class="empty muted">No plan for this week yet.</p>
 		} else {
@@ -35,14 +35,17 @@ templ WeekBody(p domain.Plan, hasPlan bool) {
 	</div>
 }
 
+// MealCard is one meal of the week as a brand MealRow: the suggested day,
+// the title (two lines at most before it wraps on), meta and chips.
 templ MealCard(m domain.Meal) {
-	<article class="meal card" id={ "meal-" + m.ID.String() }>
-		<a class="meal-link" href={ templ.SafeURL("/meals/" + m.ID.String()) }>
-			<span class="meal-text">
-				<span class="meal-title">{ m.Title }</span>
-				<span class="small muted">{ mealMeta(m) }</span>
-			</span>
-			<span class="meal-go">Recipe</span>
+	<article class="hsv-meal meal" id={ "meal-" + m.ID.String() }>
+		<span class="hsv-meal__day" aria-hidden="true">{ shortDay(m.Day) }</span>
+		<a class="meal-link hsv-meal__body" href={ templ.SafeURL("/meals/" + m.ID.String()) }>
+			<span class="meal-title hsv-meal__title">{ m.Title }</span>
+			<span class="small muted">{ m.MealType.Label() } · { itoa(m.Minutes) } min</span>
+			if hasBabyStep(m.Steps) {
+				<span class="hsv-meal__tags"><span class="hsv-chip hsv-chip--info">Baby portion</span></span>
+			}
 		</a>
 	</article>
 }

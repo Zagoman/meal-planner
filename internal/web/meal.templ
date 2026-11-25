@@ -11,14 +11,7 @@ import (
 // Start cooking.
 templ MealPage(m domain.Meal) {
 	@SubLayout(m.Title, TabRecipe, "/week", "This week") {
-		<div class="pills">
-			<span class="pill">{ m.MealType.Label() }</span>
-			<span class="pill">{ itoa(m.Minutes) } min</span>
-			<span class="pill">Serves { itoa(m.Servings) }</span>
-			if m.OnePot {
-				<span class="pill">One pot</span>
-			}
-		</div>
+		<p class="eyebrow">{ recipeMeta(m.Day, m.MealType, m.Minutes, m.Servings, m.OnePot) }</p>
 		@IngredientList(m.Ingredients, m.AfterBabyPortion, "/meals/"+m.ID.String())
 		@StepList(m.Steps)
 		<details class="card rate">
@@ -62,7 +55,7 @@ templ IngredientList(ings []domain.Ingredient, after []string, back string) {
 }
 
 templ StepList(steps []domain.Step) {
-	<h2 class="sec-label">Steps</h2>
+	<h2 class="sec-label">Method</h2>
 	<ol class="steps-list">
 		for i, st := range steps {
 			if st.BabyPortion {

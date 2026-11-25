@@ -14,13 +14,16 @@ templ DraftCard(c domain.DraftCard) {
 		class={ "card draft-card", templ.KV("ready", c.State == domain.DraftReady) }
 		hx-get="/plans/next/card"
 		hx-trigger="sse:plan.updated, sse:job.failed"
+		hx-disinherit="*"
 		hx-swap="outerHTML"
 		data-state={ string(c.State) }
 	>
 		switch c.State {
 			case domain.DraftMaking:
-				<p class="draft-title"><span class="spinner" aria-hidden="true"></span> Making your plan…</p>
-				<p class="small muted">This takes up to a minute. You can leave this page.</p>
+				<div class="loader-row">
+					@Loader("Making your plan", false)
+				</div>
+				<p class="small muted center">This takes up to a minute. You can leave this page.</p>
 			case domain.DraftReady:
 				<div class="draft-head">
 					<span class="draft-title">Next week is ready</span>
@@ -96,9 +99,9 @@ templ AskForm() {
 		hx-disabled-elt="find button"
 		hx-on::after-request="if (event.detail.successful) this.reset()"
 	>
-		<label class="visually-hidden" for="ask-prompt">Ask Claude to change the plan</label>
-		<input id="ask-prompt" name="prompt" required maxlength="500" placeholder="Ask Claude: less fish, one cake for Sunday…" autocomplete="off"/>
-		<button type="submit" class="icon-btn" aria-label="Send to Claude">
+		<label class="visually-hidden" for="ask-prompt">Ask for changes to the plan</label>
+		<input id="ask-prompt" name="prompt" required maxlength="500" placeholder="Less fish, one cake for Sunday…" autocomplete="off"/>
+		<button type="submit" class="icon-btn" aria-label="Send">
 			@icon("m22 2-7 20-4-9-9-4Z M22 2 11 13")
 		</button>
 	</form>
@@ -107,9 +110,9 @@ templ AskForm() {
 // DraftMeals is every draft meal; it refetches when the plan changes (a
 // new draft, Ask Claude, confirm).
 templ DraftMeals(r domain.Review, me uuid.UUID) {
-	<div id="draft-meals" class="meals" hx-get="/plans/next/meals" hx-trigger="sse:plan.updated" hx-swap="outerHTML">
+	<div id="draft-meals" class="meals" hx-get="/plans/next/meals" hx-trigger="sse:plan.updated" hx-swap="outerHTML" hx-disinherit="*">
 		if r.Asking {
-			<p class="notice" role="status"><span class="spinner" aria-hidden="true"></span> Claude is changing the plan…</p>
+			<p class="notice" role="status">@Rock() Changing the plan…</p>
 		} else if r.AskError != "" {
 			<p class="notice warn" role="status">Couldn't change the plan. The meals below are unchanged. Try again.</p>
 		}
@@ -117,7 +120,7 @@ templ DraftMeals(r domain.Review, me uuid.UUID) {
 			@DraftMealCard(m, me, r.ConfirmsAt.Format("15:04"))
 		}
 		if len(r.Meals) == 0 {
-			<p class="empty muted">No meals left. Ask Claude for some.</p>
+			<p class="empty muted">No meals left. Ask for some above.</p>
 		}
 	</div>
 }
@@ -130,6 +133,7 @@ templ DraftMealCard(m domain.DraftMeal, me uuid.UUID, confirmTime string) {
 		class={ "card draft-meal", templ.KV("disliked", m.Downs() > 0), templ.KV("busy", m.Swapping) }
 		hx-get={ "/meals/" + m.ID.String() + "/card" }
 		hx-trigger={ "sse:meal-" + m.ID.String() }
+		hx-disinherit="*"
 		hx-swap="outerHTML"
 	>
 		<div class="dm-text">
@@ -137,7 +141,7 @@ templ DraftMealCard(m domain.DraftMeal, me uuid.UUID, confirmTime string) {
 			<span class="small muted">{ mealMeta(m.Meal) }{ voteText(m, me) }</span>
 		</div>
 		if m.Swapping {
-			<p class="small muted" role="status"><span class="spinner" aria-hidden="true"></span> Swapping…</p>
+			<p class="small muted" role="status">@Rock() Swapping…</p>
 		} else {
 			<div class="dm-actions">
 				@voteButton(m, 1)
@@ -194,7 +198,7 @@ templ icon(d string) {
 // ListPreviewLink is the review page's line about the list the draft would
 // make; it refetches when meals change.
 templ ListPreviewLink(l domain.List) {
-	<div id="list-preview" hx-get="/plans/next/list-preview" hx-trigger="sse:meal.updated, sse:plan.updated" hx-swap="outerHTML">
+	<div id="list-preview" hx-get="/plans/next/list-preview" hx-trigger="sse:meal.updated, sse:plan.updated" hx-swap="outerHTML" hx-disinherit="*">
 		<a class="preview-link" href="/plans/next/list-preview">
 			<span>Shopping list preview · { itoa(previewCount(l)) } items</span>
 			<span class="go">Show</span>

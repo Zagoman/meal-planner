@@ -377,7 +377,7 @@ func SetupPage(p domain.Profile) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</fieldset><fieldset class=\"q\"><legend class=\"qt\"><span class=\"qn\">3 of 4</span> Anything you never eat?</legend> <label class=\"visually-hidden\" for=\"setup-avoid\">Foods to avoid, separated by commas</label> <input id=\"setup-avoid\" name=\"avoid\" maxlength=\"1000\" placeholder=\"E.g. onion, coriander\" autocomplete=\"off\"><p class=\"muted small\">Separate foods with commas. Claude never plans a meal with them.</p></fieldset><fieldset class=\"q\"><legend class=\"qt\"><span class=\"qn\">4 of 4</span> Which day do you usually shop?</legend><div class=\"days\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</fieldset><fieldset class=\"q\"><legend class=\"qt\"><span class=\"qn\">3 of 4</span> Anything you never eat?</legend> <label class=\"visually-hidden\" for=\"setup-avoid\">Foods to avoid, separated by commas</label> <input id=\"setup-avoid\" name=\"avoid\" maxlength=\"1000\" placeholder=\"E.g. onion, coriander\" autocomplete=\"off\"><p class=\"muted small\">Separate foods with commas. We never plan a meal with them.</p></fieldset><fieldset class=\"q\"><legend class=\"qt\"><span class=\"qn\">4 of 4</span> Which day do you usually shop?</legend><div class=\"days\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

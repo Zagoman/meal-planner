@@ -933,7 +933,7 @@ func TestStaticAndServiceWorker(t *testing.T) {
 	for path, want := range map[string]string{
 		"/sw.js":                       "mp-pages-",
 		"/static/app.js":               "mp:tickQueue",
-		"/static/manifest.webmanifest": "Meal Planner",
+		"/static/manifest.webmanifest": "Hvad skal vi ha'?",
 		"/static/htmx-ext-sse.js":      "sse",
 	} {
 		rec := f.do(t, req{path: path})

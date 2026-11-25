@@ -347,3 +347,47 @@ without email.
 
 All five windows of the handoff are built and deployed. Still open from
 window 4: email (G-21) waits on the Resend, DNS and vault steps.
+
+## Design A – Brand foundation (branch `design-a-brand`)
+
+From the design handover "Hvad skal vi ha'? – dev handover"
+(https://claude.ai/artifact/KoxfqWoq7dsAnDpatFkLat), split into three steps:
+A brand foundation, B screen behaviour and copy states, C recipe pictures.
+Decided with the owner: keep 1–5 ratings, keep AI recipe import,
+self-host the fonts, build family photos in step C.
+
+**Built**
+
+- `web/static/hvadskalviha.css`: the design system's tokens (light and the
+  dark "Evening" theme, which follows the phone; `data-theme` on `<html>`
+  forces one), type classes, speckle, and the `hsv-*` components (Mark,
+  Button, Chip, MealRow, ShoppingItem, Card, Progress, Rate, Loader).
+- Fonts self-hosted: Instrument Serif (regular, italic) and Instrument Sans
+  (variable), latin woff2 from Fontsource 5.3.0, OFL licences beside them.
+- `app.css` rewritten on the brand tokens: hairline rows instead of cards in
+  lists, 4/6 px corners, no shadows, 48 px tap targets, one centred column
+  up to 560 px, actions at the end of the content (no sticky footers).
+- Name: Hvad skal vi ha'? in titles, manifest, emails, the invite page and
+  the API title. Mark (inline SVG, follows the theme) in the header and on
+  the sign-in page with the Danish tagline (`lang="da"`). App icons
+  (blue tint with speckle, 512/192/180 PNG and SVG) and favicons from the
+  brand assets.
+- Screen titles in the serif with the last word in italic (`Title`, words
+  of four letters or more).
+- Loader: draw-rock with "Making your plan" while a draft is made; the
+  rocking bowl for short waits (changing the plan, swapping, reading a
+  recipe, tweaking).
+- No AI provider named anywhere in the UI or emails ("Changing the plan…",
+  "Tweak this recipe", library source "Planned").
+- Draft email: subject "Your plan for week N is ready.", brand colours,
+  the name as text (no image).
+- Week meals as brand meal rows (day, title, meta, Baby portion chip);
+  recipe pages with a meta line, amounts right-aligned, "Method" with serif
+  numerals.
+- Fixed: opening a meal from the week page gave a blank page (see Fixed in
+  GAPS.md); e2e test added.
+- Service worker cache v3 (new CSS, fonts, icons).
+
+**Known issues**: G-33 to G-39 in GAPS.md; the design deviations are in its
+Deviations table.
+

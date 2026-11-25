@@ -123,6 +123,7 @@ templ NotCookedSection(meals []domain.NotCookedMeal, oob bool) {
 		id="not-cooked"
 		hx-get="/plans/next/not-cooked"
 		hx-trigger="sse:plan.updated"
+		hx-disinherit="*"
 		hx-swap="outerHTML"
 		if oob {
 			hx-swap-oob="true"
@@ -163,7 +164,7 @@ var recipeFilters = []struct {
 
 templ RecipesPage(q string, filter domain.RecipeFilter, recipes []domain.RecipeSummary) {
 	@Layout("Recipes", TabRecipes) {
-		<p class="page-action"><a class="button primary" href="/recipes/add">Add recipe</a></p>
+		<p class="page-action"><a class="button secondary-btn" href="/recipes/add">Add recipe</a></p>
 		<form class="search" action="/recipes" method="get" hx-get="/recipes" hx-target="#recipe-results" hx-swap="outerHTML" hx-push-url="true"
 			hx-trigger="input changed delay:300ms from:#recipe-q, change from:input[name=filter], submit">
 			<label class="search-box" for="recipe-q">
@@ -188,7 +189,7 @@ templ RecipesPage(q string, filter domain.RecipeFilter, recipes []domain.RecipeS
 templ RecipeResults(recipes []domain.RecipeSummary) {
 	<div id="recipe-results" class="recipes">
 		if len(recipes) == 0 {
-			<p class="empty muted">No recipes found. Every meal Claude plans is saved here.</p>
+			<p class="empty muted">No recipes found. Every meal we plan is saved here.</p>
 		}
 		for _, r := range recipes {
 			<a class="rec" href={ templ.SafeURL("/recipes/" + r.ID.String()) }>
@@ -213,40 +214,31 @@ templ RecipeResults(recipes []domain.RecipeSummary) {
 templ RecipeDetailPage(d domain.RecipeDetail) {
 	@SubLayout(d.Meal.Title, TabRecipes, "/recipes", "Recipes") {
 		<div class="recipe" hx-ext="sse" sse-connect="/events">
-			<div class="pills">
-				<span class="pill">{ d.Meal.MealType.Label() }</span>
-				<span class="pill">{ itoa(d.Meal.Minutes) } min</span>
-				<span class="pill">{ statsLine(d.RecipeStats) }</span>
-				<span class="pill">
-					if d.ParentID != nil {
-						Tweaked version
-					} else if d.Source == domain.SourceClaude {
-						Made by Claude
-					} else {
-						Our own
-					}
-				</span>
-			</div>
+			<p class="eyebrow">
+				{ d.Meal.MealType.Label() } · { itoa(d.Meal.Minutes) } min · { statsLine(d.RecipeStats) } ·
+				if d.ParentID != nil {
+					Tweaked version
+				} else if d.Source == domain.SourceClaude {
+					From your plans
+				} else {
+					Our own
+				}
+			</p>
 			if d.LatestNote != "" {
 				<p class="note">Your note: “{ d.LatestNote }”</p>
 			}
 			if d.ParentID != nil {
 				<p class="small"><a href={ templ.SafeURL("/recipes/" + d.ParentID.String()) }>See the original</a></p>
 			}
-			<h2 class="sec-label">Tweak with Claude</h2>
+			<h2 class="sec-label">Tweak this recipe</h2>
 			@TweakBox(d)
 			<h2 class="sec-label">Ingredients · { itoa(len(d.Meal.Ingredients)) }</h2>
 			<ul class="ingredients card">
 				for _, ing := range d.Meal.Ingredients {
-					<li><span class="qty">{ qty(ing.Qty, ing.Unit) }</span> { ing.Name }</li>
+					<li><span class="ing-name">{ ing.Name }</span> <span class="qty">{ qty(ing.Qty, ing.Unit) }</span></li>
 				}
 			</ul>
-			<h2 class="sec-label">Steps</h2>
-			<ol class="steps card">
-				for _, st := range d.Meal.Steps {
-					<li class={ templ.KV("baby", st.BabyPortion) }>{ st.Text }</li>
-				}
-			</ol>
+			@StepList(d.Meal.Steps)
 			<div class="recipe-foot">
 				<a class="button secondary-btn wide" href={ templ.SafeURL("/recipes/" + d.ID.String() + "/cook") }>Start cooking</a>
 				<form action={ templ.SafeURL("/recipes/" + d.ID.String() + "/add-next") } method="post" hx-post={ "/recipes/" + d.ID.String() + "/add-next" } hx-swap="none">
@@ -264,9 +256,9 @@ templ RecipeDetailPage(d domain.RecipeDetail) {
 // TweakBox is the tweak form and the state of the last tweak. It refetches
 // when the tweak finishes.
 templ TweakBox(d domain.RecipeDetail) {
-	<div id="tweak" hx-get={ "/recipes/" + d.ID.String() + "/tweak" } hx-trigger={ "sse:recipe-" + d.ID.String() } hx-swap="outerHTML">
+	<div id="tweak" hx-get={ "/recipes/" + d.ID.String() + "/tweak" } hx-trigger={ "sse:recipe-" + d.ID.String() } hx-swap="outerHTML" hx-disinherit="*">
 		if d.Tweak != nil && d.Tweak.Status.Pending() {
-			<p class="notice" role="status"><span class="spinner" aria-hidden="true"></span> Claude is tweaking this recipe…</p>
+			<p class="notice" role="status">@Rock() Tweaking this recipe…</p>
 		} else {
 			if d.Tweak != nil && d.Tweak.Status == domain.JobFailed {
 				<p class="notice warn" role="status">Couldn't tweak the recipe. Try again.</p>
@@ -276,9 +268,9 @@ templ TweakBox(d domain.RecipeDetail) {
 			}
 			<form class="ask" action={ templ.SafeURL("/recipes/" + d.ID.String() + "/tweak") } method="post"
 				hx-post={ "/recipes/" + d.ID.String() + "/tweak" } hx-target="#tweak" hx-swap="outerHTML" hx-disabled-elt="find button">
-				<label class="visually-hidden" for="tweak-prompt">Ask Claude to change this recipe</label>
+				<label class="visually-hidden" for="tweak-prompt">Ask for a change to this recipe</label>
 				<input id="tweak-prompt" name="prompt" required maxlength="500" placeholder="Add chicken, make it for 4…" autocomplete="off"/>
-				<button type="submit" class="icon-btn" aria-label="Send to Claude">
+				<button type="submit" class="icon-btn" aria-label="Send">
 					@icon("m22 2-7 20-4-9-9-4Z M22 2 11 13")
 				</button>
 			</form>

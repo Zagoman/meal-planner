@@ -7,16 +7,21 @@
 // - Everything else (POSTs, the SSE stream, /api) goes straight to the network.
 // - Visiting /login (after logout or an expired session) drops cached pages,
 //   so one member's household data does not linger on a shared phone.
-const VERSION = "v2";
+const VERSION = "v3";
 const ASSETS = `mp-assets-${VERSION}`;
 const PAGES = `mp-pages-${VERSION}`;
 const PRECACHE = [
+  "/static/hvadskalviha.css",
   "/static/app.css",
   "/static/app.js",
   "/static/htmx.min.js",
   "/static/htmx-ext-sse.js",
   "/static/manifest.webmanifest",
   "/static/icon.svg",
+  "/static/favicon.svg",
+  "/static/fonts/instrument-sans-var.woff2",
+  "/static/fonts/instrument-serif-400.woff2",
+  "/static/fonts/instrument-serif-400-italic.woff2",
 ];
 const CACHED_PAGES = [/^\/$/, /^\/list$/, /^\/week$/, /^\/meals\/[0-9a-f-]+$/];
 

@@ -80,7 +80,7 @@ func (s *Service) sendLink(ctx context.Context, m db.Member, householdID, invite
 		return nil
 	}
 	msg := mailer.Simple(m.Email, "Your sign-in link",
-		"Tap the button to sign in to Meal Planner.", "Sign in", s.baseURL+"/auth/"+token,
+		"Tap the button to sign in.", "Sign in", s.baseURL+"/auth/"+token,
 		"The link works once and expires in 15 minutes. If you didn't ask for it, ignore this email.")
 	if err := s.mail.Send(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "send sign-in link", "member_id", m.ID, "err", err)

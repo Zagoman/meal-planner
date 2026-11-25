@@ -101,3 +101,21 @@ test("a draft confirmed on one phone sends the other back to the week", async ({
   await expect(anna).toHaveURL(/\/week$/);
   await expect(ben).toHaveURL(/\/week$/, { timeout: 3_000 });
 });
+
+test("a meal opens from the week page and the draft card's link opens the review", async ({ browser }) => {
+  const anna = await login(browser, "anna@example.test");
+  // Links inside the SSE-refreshed #week must not inherit its hx-select.
+  const first = anna.locator("#week-meals .meal-title").first();
+  const title = await first.innerText();
+  await first.click();
+  await expect(anna).toHaveURL(/\/meals\//);
+  await expect(anna.getByRole("heading", { name: title })).toBeVisible();
+  await expect(anna.getByRole("heading", { name: "Method" })).toBeVisible();
+
+  await anna.goBack();
+  await anna.getByRole("button", { name: "Make next week's plan now" }).click();
+  await expect(anna.locator("#draft-card")).toHaveAttribute("data-state", "ready", { timeout: 6_000 });
+  await anna.locator("#draft-card").getByRole("link").click();
+  await expect(anna.locator("main")).not.toBeEmpty();
+  await expect(anna.getByRole("heading", { level: 1 })).toBeVisible();
+});

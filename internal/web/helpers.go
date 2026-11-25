@@ -89,6 +89,29 @@ func shortDay(d domain.Weekday) string {
 	return strings.ToUpper(string(d[:1])) + string(d[1:3])
 }
 
+// hasBabyStep reports whether a recipe has a baby-portion step.
+func hasBabyStep(steps []domain.Step) bool {
+	for _, st := range steps {
+		if st.BabyPortion {
+			return true
+		}
+	}
+	return false
+}
+
+// recipeMeta is a recipe's meta line: "Tuesday · Dinner · 45 min · Serves 4 · One pot".
+func recipeMeta(day domain.Weekday, t domain.MealType, minutes, servings int, onePot bool) string {
+	parts := []string{}
+	if day != "" {
+		parts = append(parts, strings.ToUpper(string(day[:1]))+string(day[1:]))
+	}
+	parts = append(parts, t.Label(), itoa(minutes)+" min", "Serves "+itoa(servings))
+	if onePot {
+		parts = append(parts, "One pot")
+	}
+	return strings.Join(parts, " · ")
+}
+
 // mealMeta is "Dinner · 30 min · suggested Wed".
 func mealMeta(m domain.Meal) string {
 	s := m.MealType.Label() + " · " + itoa(m.Minutes) + " min"

@@ -1,0 +1,158 @@
+/* Hvad skal vi ha'? brand stylesheet: tokens, type, components.
+   Built from the design system (tokens.json, components bundle.css) for the
+   server-rendered app. App-specific layout lives in app.css. */
+
+@font-face { font-family: "Instrument Serif"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/instrument-serif-400.woff2") format("woff2"); }
+@font-face { font-family: "Instrument Serif"; font-style: italic; font-weight: 400; font-display: swap; src: url("fonts/instrument-serif-400-italic.woff2") format("woff2"); }
+@font-face { font-family: "Instrument Sans"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("fonts/instrument-sans-var.woff2") format("woff2"); }
+
+:root {
+  /* Brand colours: the same in both themes, for the mark and drawings. */
+  --charcoal: #2A241F; --oak: #B8946A; --dusty-blue: #A9B8C2; --blue-tint: #E3E9ED; --chalk: #F5F2EC;
+
+  --surface: #F5F2EC; --surface-raised: #FBF9F5; --surface-sunken: #EDE8DF;
+  --ink: #2A241F; --ink-muted: #6B6157;
+  --line: #E2DCD2; --line-strong: #8F8376;
+  --primary: #2A241F; --on-primary: #F5F2EC;
+  --accent: #B8946A; --accent-ink: #7A5B38;
+  --info-bg: #E3E9ED; --info-ink: #3F5563;
+  --success-bg: #E1ECE3; --success-ink: #3F6B4E;
+  --warning-bg: #F5E6C8; --warning-ink: #7A5418;
+  --danger-bg: #F6E1DC; --danger-ink: #A3402F;
+  --focus: #3F5563;
+  --mark-line: var(--charcoal);
+
+  --font-serif: "Instrument Serif", Georgia, serif;
+  --font-sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px; --space-12: 48px;
+  --radius-sm: 4px; --radius-md: 6px; --radius-lg: 24px; --radius-pill: 999px;
+  --tap-target: 48px; --row-height: 56px; --hairline: 1px;
+
+  /* Stoneware speckle: SVG turbulence in charcoal at low opacity. */
+  --speckle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='s'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.16 0 0 0 0 0.14 0 0 0 0 0.12 1.8 0 0 0 -1.08'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23s)' opacity='.5'/%3E%3C/svg%3E");
+
+  color-scheme: light;
+}
+
+/* "Evening": dark follows the phone unless a theme is forced on <html>. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface: #1E1A16; --surface-raised: #2A241F; --surface-sunken: #171310;
+    --ink: #F3ECE2; --ink-muted: #C2B3A0;
+    --line: #3A3129; --line-strong: #7D6E5F;
+    --primary: #F3ECE2; --on-primary: #2A241F;
+    --accent: #C9A57A; --accent-ink: #D9B88C;
+    --info-bg: #2C3A44; --info-ink: #C7D4DC;
+    --success-bg: #23352A; --success-ink: #A9CDB3;
+    --warning-bg: #3E3220; --warning-ink: #E8C98A;
+    --danger-bg: #42241E; --danger-ink: #F0A898;
+    --focus: #A9B8C2;
+    --mark-line: var(--chalk);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --surface: #1E1A16; --surface-raised: #2A241F; --surface-sunken: #171310;
+  --ink: #F3ECE2; --ink-muted: #C2B3A0;
+  --line: #3A3129; --line-strong: #7D6E5F;
+  --primary: #F3ECE2; --on-primary: #2A241F;
+  --accent: #C9A57A; --accent-ink: #D9B88C;
+  --info-bg: #2C3A44; --info-ink: #C7D4DC;
+  --success-bg: #23352A; --success-ink: #A9CDB3;
+  --warning-bg: #3E3220; --warning-ink: #E8C98A;
+  --danger-bg: #42241E; --danger-ink: #F0A898;
+  --focus: #A9B8C2;
+  --mark-line: var(--chalk);
+  color-scheme: dark;
+}
+
+body { margin: 0; background-color: var(--surface); color: var(--ink); font: 400 16px/24px var(--font-sans); }
+body.has-speckle { background-image: var(--speckle); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body.has-speckle { background-image: none; } }
+:root[data-theme="dark"] body.has-speckle { background-image: none; }
+
+.app { max-width: 560px; margin: 0 auto; padding: 0 var(--space-6); }
+
+/* Type */
+.display { font: 400 48px/52px var(--font-serif); margin: 0; }
+.title { font: 400 32px/36px var(--font-serif); margin: 0; }
+.heading { font: 400 24px/30px var(--font-serif); margin: 0; }
+.body-lg { font-size: 17px; line-height: 26px; }
+.body { font-size: 16px; line-height: 24px; }
+.small { font-size: 14px; line-height: 20px; }
+.label { font: 600 12px/16px var(--font-sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-muted); }
+.display em, .title em, .heading em { font-style: italic; }
+
+/* Mark */
+.hsv-mark { display: inline-block; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.hsv-mark__line, .hsv-mark__bowl { stroke: var(--mark-line); }
+.hsv-mark__bowl { fill: var(--oak); }
+.hsv-mark--inverse .hsv-mark__line, .hsv-mark--inverse .hsv-mark__bowl { stroke: var(--chalk); }
+
+/* Button */
+.hsv-btn { font: 600 16px/20px var(--font-sans); min-height: var(--tap-target); padding: 0 var(--space-6); border-radius: var(--radius-sm); border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); text-decoration: none; }
+.hsv-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.hsv-btn--primary { background: var(--primary); color: var(--on-primary); }
+.hsv-btn--secondary { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+.hsv-btn--quiet { background: transparent; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.hsv-btn--full { width: 100%; }
+.hsv-btn:disabled { opacity: .45; cursor: not-allowed; }
+.hsv-btn.htmx-request { opacity: .6; pointer-events: none; }
+
+/* Chip */
+.hsv-chip { display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px 10px; border-radius: var(--radius-pill); font: 600 12px/18px var(--font-sans); white-space: nowrap; }
+.hsv-chip--neutral { background: var(--surface-sunken); color: var(--ink); }
+.hsv-chip--info { background: var(--info-bg); color: var(--info-ink); }
+.hsv-chip--success { background: var(--success-bg); color: var(--success-ink); }
+.hsv-chip--warning { background: var(--warning-bg); color: var(--warning-ink); }
+.hsv-chip--danger { background: var(--danger-bg); color: var(--danger-ink); }
+
+/* MealRow */
+.hsv-meal { display: flex; gap: var(--space-4); align-items: center; min-height: var(--row-height); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); color: var(--ink); }
+.hsv-meal__day { font: 600 12px/16px var(--font-sans); letter-spacing: .08em; color: var(--ink-muted); width: 36px; flex: none; text-transform: uppercase; }
+.hsv-meal__body { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1; }
+.hsv-meal__title { font-size: 17px; line-height: 24px; color: var(--ink); text-decoration: none; }
+.hsv-meal__tags { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+
+/* ShoppingItem */
+.hsv-item { display: flex; gap: var(--space-3); align-items: center; min-height: var(--row-height); border-bottom: 1px solid var(--line); font: 17px/24px var(--font-sans); color: var(--ink); cursor: pointer; }
+.hsv-item input { width: 24px; height: 24px; margin: 0; accent-color: var(--primary); flex: none; }
+.hsv-item input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.hsv-item__label { flex: 1; }
+.hsv-item__qty { font-size: 14px; color: var(--ink-muted); text-align: right; }
+.hsv-item.is-done .hsv-item__label { text-decoration: line-through; color: var(--ink-muted); }
+
+/* Card */
+.hsv-card { background: var(--surface-raised); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-6) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); color: var(--ink); }
+.hsv-card__eyebrow { font: 600 12px/16px var(--font-sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-muted); }
+.hsv-card__title { margin: 0; font: 400 32px/36px var(--font-serif); }
+
+/* Progress */
+.hsv-progress { height: 4px; background: var(--surface-sunken); border-radius: var(--radius-pill); overflow: hidden; }
+.hsv-progress > span { display: block; height: 100%; background: var(--accent); }
+
+/* Rate buttons (thumbs) */
+.hsv-rate { display: inline-flex; gap: var(--space-2); }
+.hsv-rate button { width: var(--tap-target); height: var(--tap-target); display: grid; place-items: center; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: transparent; color: var(--ink); cursor: pointer; padding: 0; }
+.hsv-rate button[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.hsv-rate button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Loader: the mark in motion. draw-rock for long waits, rock for short. */
+.hsv-loader-wrap { display: inline-flex; flex-direction: column; align-items: center; gap: var(--space-3); color: var(--ink-muted); font: 14px/20px var(--font-sans); }
+.hsv-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.hsv-loader--rock .hsv-loader__bowl { transform-box: view-box; transform-origin: 29.5px 36px; animation: hsv-rock 1.6s ease-in-out infinite; }
+@keyframes hsv-rock { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+.hsv-loader--draw-rock .hsv-loader__line { stroke-dasharray: 100; animation: hsv-dr-line 3.6s cubic-bezier(.65, 0, .35, 1) infinite; }
+.hsv-loader--draw-rock .hsv-loader__bowl { transform-box: view-box; transform-origin: 29.5px 36px; animation: hsv-dr-bowl 3.6s ease-in-out infinite; }
+@keyframes hsv-dr-line { 0% { stroke-dashoffset: 100; } 38% { stroke-dashoffset: 0; } 88% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -100; } }
+@keyframes hsv-dr-bowl { 0%, 36% { opacity: 0; transform: translateY(-5px) rotate(0deg); } 46% { opacity: 1; transform: translateY(0) rotate(0deg); } 54% { transform: rotate(-7deg); } 63% { transform: rotate(7deg); } 71% { transform: rotate(-4deg); } 79% { transform: rotate(2deg); } 85% { opacity: 1; transform: rotate(0deg); } 93%, 100% { opacity: 0; transform: rotate(0deg); } }
+@keyframes hsv-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .hsv-loader .hsv-loader__line, .hsv-loader .hsv-loader__bowl { animation: none; stroke-dashoffset: 0; transform: none; opacity: 1; }
+  .hsv-loader { animation: hsv-breathe 2s ease-in-out infinite; }
+}
+
+/* Recipe image: a dish-type drawing until the family adds a photo. */
+.hsv-drawing { display: block; width: 100%; aspect-ratio: 4 / 3; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink); object-fit: cover; }
+.hsv-drawing.has-photo { background: none; }

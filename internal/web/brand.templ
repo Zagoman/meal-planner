@@ -1,0 +1,72 @@
+package web
+
+import (
+	"strings"
+	"unicode/utf8"
+)
+
+// AppName is the brand name; AppShortName is for tight spaces.
+const (
+	AppName      = "Hvad skal vi ha'?"
+	AppShortName = "hvadskalviha"
+)
+
+// Mark is the brand mark as inline SVG, so it follows the theme. size is
+// in px; under 24 px use the favicon instead.
+templ Mark(size int) {
+	<svg class="hsv-mark" width={ itoa(size) } height={ itoa(size) } viewBox="0 0 44 44" role="img" aria-label={ AppName }>
+		<path class="hsv-mark__line" d="M3 36H16A12 12 0 1 1 16 12A12 12 0 1 1 16 36H29.5A8.5 8.5 0 0 1 21 27.5H38A8.5 8.5 0 0 1 29.5 36H41"></path>
+		<path class="hsv-mark__bowl" d="M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z"></path>
+	</svg>
+}
+
+// Loader is the long-wait loader (draw-rock) with a short label. One per
+// screen. Pass indicator to use it as an hx-indicator (shown after 500 ms).
+templ Loader(label string, indicator bool) {
+	<span class={ "hsv-loader-wrap", templ.KV("htmx-indicator", indicator) } role="status" aria-live="polite">
+		<svg class="hsv-mark hsv-loader hsv-loader--draw-rock" width="64" height="64" viewBox="0 0 44 44" aria-hidden="true">
+			<path class="hsv-mark__line hsv-loader__line" pathLength="100" d="M3 36H16A12 12 0 1 1 16 12A12 12 0 1 1 16 36H41"></path>
+			<path class="hsv-mark__bowl hsv-loader__bowl" d="M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z"></path>
+		</svg>
+		if label != "" {
+			<span class="hsv-loader__label">{ label }</span>
+		} else {
+			<span class="hsv-visually-hidden">Loading</span>
+		}
+	</span>
+}
+
+// Rock is the short-wait loader: the still mark with the bowl rocking.
+// It sits inline next to a line of text that already says what is happening.
+templ Rock() {
+	<span class="spinner" aria-hidden="true">
+		<svg class="hsv-mark hsv-loader hsv-loader--rock" width="24" height="24" viewBox="0 0 44 44">
+			<path class="hsv-mark__line" stroke-width="2.5" d="M3 36H41"></path>
+			<circle class="hsv-mark__line" stroke-width="2.5" cx="16" cy="24" r="12"></circle>
+			<path class="hsv-mark__bowl hsv-loader__bowl" stroke-width="2.5" d="M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z"></path>
+		</svg>
+	</span>
+}
+
+// Title sets a serif title with its last word in italic ("This <em>week</em>"),
+// the brand's way of warming a heading. One-word titles and short last
+// words ("Log in") stay upright.
+templ Title(s string) {
+	{{ head, last := splitLastWord(s) }}
+	if head == "" {
+		{ s }
+	} else {
+		{ head }<em>{ last }</em>
+	}
+}
+
+// splitLastWord returns s up to and including the space before its last
+// word, and that word; head is "" for a single word.
+func splitLastWord(s string) (head, last string) {
+	s = strings.TrimSpace(s)
+	i := strings.LastIndex(s, " ")
+	if i < 0 || utf8.RuneCountInString(s[i+1:]) < 4 {
+		return "", s
+	}
+	return s[:i+1], s[i+1:]
+}

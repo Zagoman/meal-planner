@@ -59,10 +59,10 @@ test("rate the week, add a not-cooked meal back, tweak and add a recipe", async 
   await anna.getByLabel("Search recipes").fill(first);
   await expect(anna.locator("#recipe-results .rec").first()).toContainText(first, { timeout: 2_000 });
   await anna.locator("#recipe-results .rec").first().click();
-  await expect(anna.getByText("Tweak with Claude")).toBeVisible();
-  await anna.getByLabel("Ask Claude to change this recipe").fill("more vegetables");
-  await anna.getByRole("button", { name: "Send to Claude" }).click();
-  await expect(anna.locator("#tweak")).toContainText("tweaking", { timeout: 2_000 });
+  await expect(anna.getByText("Tweak this recipe")).toBeVisible();
+  await anna.getByLabel("Ask for a change to this recipe").fill("more vegetables");
+  await anna.getByRole("button", { name: "Send" }).click();
+  await expect(anna.locator("#tweak")).toContainText("Tweaking", { timeout: 2_000 });
   await expect(anna.locator("#tweak")).toContainText("New version saved", { timeout: 6_000 });
   await anna.locator("#tweak").getByRole("link", { name: "Open it" }).click();
   await expect(anna.getByRole("heading", { name: /\(tweaked\)$/ })).toBeVisible();

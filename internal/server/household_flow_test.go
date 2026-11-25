@@ -174,7 +174,7 @@ func TestSecondHouseholdJoinsAndShops(t *testing.T) {
 
 	// The draft email arrives.
 	ready, err := rec.Last("bea@example.test")
-	if err != nil || ready.Subject != "Next week's plan is ready" || !strings.Contains(ready.Text, base+"/plans/next") ||
+	if err != nil || !strings.HasPrefix(ready.Subject, "Your plan for week ") || !strings.HasSuffix(ready.Subject, " is ready.") || !strings.Contains(ready.Text, base+"/plans/next") ||
 		!strings.Contains(ready.Text, "3 meals") || !strings.Contains(ready.Text, "Sunday at 08:00") {
 		t.Fatalf("draft email: %+v %v", ready, err)
 	}

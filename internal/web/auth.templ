@@ -2,6 +2,10 @@ package web
 
 templ LoginPage(next, email, errMsg string) {
 	@Layout("Log in", TabNone) {
+		<div class="welcome">
+			@Mark(56)
+			<p class="tagline"><span lang="da">En madplan, der kender jer.</span></p>
+		</div>
 		if errMsg != "" {
 			<div class="flash error" role="alert"><p>{ errMsg }</p></div>
 		}

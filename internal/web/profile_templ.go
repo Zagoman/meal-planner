@@ -56,7 +56,7 @@ func ProfilePage(p domain.Profile, avoid []domain.AvoidItem, sections []domain.S
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</section><section class=\"card\"><h2>Never eat</h2><p class=\"muted small\">Claude never plans a meal with these.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</section><section class=\"card\"><h2>Never eat</h2><p class=\"muted small\">We never plan a meal with these.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

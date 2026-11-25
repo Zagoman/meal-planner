@@ -57,24 +57,39 @@ templ page(title string, active Tab, back, backLabel string, showNav bool) {
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-			<meta name="theme-color" content="#2f6f4f"/>
+			<meta name="theme-color" content="#F5F2EC" media="(prefers-color-scheme: light)"/>
+			<meta name="theme-color" content="#1E1A16" media="(prefers-color-scheme: dark)"/>
 			<meta name="referrer" content="same-origin"/>
 			<meta name="htmx-config" content={ htmxConfig }/>
-			<title>{ title } · Meal Planner</title>
+			<title>{ title } · { AppName }</title>
 			<link rel="manifest" href="/static/manifest.webmanifest"/>
-			<link rel="icon" href="/static/icon.svg" type="image/svg+xml"/>
+			<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+			<link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32"/>
+			<link rel="apple-touch-icon" href="/static/icon-180.png"/>
+			<link rel="preload" href="/static/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="preload" href="/static/fonts/instrument-serif-400.woff2" as="font" type="font/woff2" crossorigin/>
+			<link rel="stylesheet" href="/static/hvadskalviha.css"/>
 			<link rel="stylesheet" href="/static/app.css"/>
 			<script src="/static/htmx.min.js" defer></script>
 			<script src="/static/htmx-ext-sse.js" defer></script>
 			<script src="/static/app.js" defer></script>
 		</head>
-		<body hx-boost="true" data-signed-in?={ active != TabNone } class={ templ.KV("full", !showNav && active != TabNone) }>
+		<body hx-boost="true" data-signed-in?={ active != TabNone } class={ "has-speckle", templ.KV("full", !showNav && active != TabNone) }>
 			if back != "" {
 				<nav class="back"><a href={ templ.SafeURL(back) }>‹ { backLabel }</a></nav>
 			}
 			<header class="top">
-				<h1>{ title }</h1>
+				<div class="head">
+					<h1 id="page-title" tabindex="-1">
+						@Title(title)
+					</h1>
+				</div>
 				<span id="offline-badge" class="badge offline" hidden>Offline</span>
+				if showNav {
+					<a class="brand" href="/week">
+						@Mark(28)
+					</a>
+				}
 			</header>
 			<div id="flash" role="status" aria-live="polite"></div>
 			<main id="main">

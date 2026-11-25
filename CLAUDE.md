@@ -115,9 +115,17 @@ new files (`00003_...sql`), never edits to an applied one.
 - Server-side fetches of user-given URLs go through `internal/fetch` only
   (public addresses, size and time limits). Uploaded photos go through
   `internal/imagefit` and are not stored once read.
+- Brand: Hvad skal vi ha'? (`web.AppName`). Colours, type and components
+  come from `web/static/hvadskalviha.css` (the design system's tokens; use
+  `var(--ink)`, `var(--space-4)`, never hex in templates or `app.css`).
+  UI text is English; Danish brand lines get `lang="da"`. Never name the AI
+  provider in anything a user sees (UI, emails, errors): say "we" or
+  describe the action.
 - SSE: `GET /events` sends per-partial events (`list.item`, `meal.updated`,
   `meal-<id>`, `plan.updated`, `job.failed`); pages refetch the partial
-  with `hx-trigger="sse:<name>"`. Every partial has a stable id.
+  with `hx-trigger="sse:<name>"`. Every partial has a stable id. A
+  partial with `hx-get`/`hx-select`/`hx-swap` sets `hx-disinherit="*"` so
+  the links inside it don't inherit them.
 - Claude returns meals only (schema: `internal/domain/meal_plan.schema.json`,
   structs `domain.MealPlanJSON`). The server builds the list. Validate:
   schema, meal count per type equals `meal_targets`, `one_pot` when the

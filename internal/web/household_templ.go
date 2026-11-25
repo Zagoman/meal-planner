@@ -352,7 +352,7 @@ func InvitePage(token string, signedIn, canSignup bool) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<p>You've been invited to join a household on Meal Planner.</p><section class=\"card\"><h2>I have an account</h2>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<p>You've been invited to join a household on <span lang=\"da\">Hvad skal vi ha'?</span>.</p><section class=\"card\"><h2>I have an account</h2>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

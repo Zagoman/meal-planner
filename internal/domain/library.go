@@ -69,10 +69,10 @@ const (
 	SourceManual RecipeSource = "manual"
 )
 
-// Label is "Claude" or "Ours".
+// Label is "Planned" (made with the plans) or "Ours". It never names the AI provider.
 func (s RecipeSource) Label() string {
 	if s == SourceClaude || s == "" {
-		return "Claude"
+		return "Planned"
 	}
 	return "Ours"
 }

@@ -1,8 +1,9 @@
 # Gaps
 
-Everything known to be missing, rough or different from the dev handoff,
-in one place. Add a row when you find one; move it to **Fixed** (with the
-commit) when it is done. `HANDOVER.md` says what each window built; this
+Everything known to be missing, rough or different from the dev handoff
+and from the design handover (Hvad skal vi ha'?; "Found" `DA` is design
+step A), in one place. Add a row when you find one; move it to **Fixed**
+(with the commit) when it is done. `HANDOVER.md` says what each window built; this
 file is the to-do list that outlives the windows.
 
 IDs are stable: refer to a gap as `G-12` in commits and issues.
@@ -50,6 +51,13 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | G-30 | Cook mode | A running timer stops showing when you move to another step (the alarm still sounds). | You have to step back to see the time left. | Keep running timers in a bar above the step. | W5 |
 | G-31 | Cook mode | The Screen Wake Lock could not be checked in the preview browser (it fell back to "may turn the screen off"). | Works on phones that support it; unverified here. | Check on a phone. | W5 |
 | G-32 | Offline ticks | "Last tick wins" uses the phone's clock for offline ticks (clamped to the last 7 days and never later than the server's now). | A phone with a clock far behind can lose a tick it made later. | Fine for a household; a vector clock would be overkill. | W5 |
+| G-33 | Plan screen | The design handover puts "rate last week" and "not cooked last week" at the top of the plan screen, before the draft. They are still a separate rating page and a section of the review. | Two screens instead of one pass. | Design step B. | DA |
+| G-34 | Copy | The design handover's state copy is not in yet: first plan ("Here's a first guess…"), empty plan, empty list, list done ("All ticked…"), generation failed, tick save failed (revert + danger line). | The old wording shows in those states. | Design step B. | DA |
+| G-35 | Setup | No optional "Any cuisines you love?" step, no baby-portions switch (off by default), and no AI note ("Your plans are made with the help of AI…"). | Setup asks less than the handover. | Design step B. | DA |
+| G-36 | Recipe image | No dish-type line drawing or family photo on recipes ("Add your photo"). Needs a dish-type field and photo storage. | Recipes have no picture. | Design step C. | DA |
+| G-37 | Accessibility | After an htmx swap that changes the main content (a new plan arrives), focus is not moved to the new heading and nothing is announced. | Screen-reader users may miss the new plan. | Focus `#page-title` or announce with `aria-live` when the draft card turns ready. | DA |
+| G-38 | Buttons | "One primary per screen" isn't enforced everywhere: the recipe page has "Add to next week" (primary) next to "Start cooking"; forms keep their own primary. | Slightly busier screens than the handover. | Review button hierarchy screen by screen in step B. | DA |
+| G-39 | Domain | The app stays on meals.liluhome.dk; the brand domain (hvadskalviha.app or hvadskalvihave.dk) is still to be checked and bought. | Name and domain differ. | Decide the domain; move `BASE_URL`, email sender and Caddy. | DA |
 
 ## Deviations from the handoff (on purpose)
 
@@ -78,6 +86,12 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | Never-eat link | `GET /avoid/confirm` returns the sheet | the sheet for htmx, a full confirm page without JavaScript (`back=` returns to the recipe) | Works without JavaScript. |
 | Offline tick | last tick per item | each tick carries the time it was made (`at`) and applies only if it is the latest | "Last tick" across phones, not only within one phone's queue. |
 | Cook mode | `GET /recipes/{id}/cook` | also `GET /meals/{id}/cook` (the meal page's "Start cooking") | Week meals are meals, not library recipes. |
+| Rating (design) | thumbs up / down | 1–5 stars kept | Decided with the owner: finer ratings; 1 still bans a recipe. |
+| AI use (design) | planning and tweaking saved recipes only | also recipe import (photo, paste, link) | Decided with the owner: import can't read a photo without it. |
+| Fonts (design) | Google Fonts `<link>` | self-hosted woff2 in `web/static/fonts` (OFL) | Decided with the owner: works offline in the shop, no call to Google. |
+| Component classes (design) | `hsv-*` classes everywhere | `hvadskalviha.css` has the `hsv-*` components; existing class names are restyled to match in `app.css`. MealRow, Chip, Mark and Loader use `hsv-*` directly. Shopping rows stay buttons, not `<label>` + checkbox | Keeps the offline tick queue and every test selector working. |
+| Email mark (design) | mark SVG in emails | the name as serif text, no image | An image would be fetched from the server when the email is opened. |
+| Navigation (design) | not specified | the bottom tab bar stays fixed; action bars at the bottom are gone (actions end the content) | Navigation is not an action bar; the handover's rule is about actions. |
 
 ## Fixed
 
@@ -95,3 +109,5 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | — | The avoid sheet stayed open after "Avoid …" (the close handler was on the button; htmx fires on the form). | W5 (before commit) |
 | — | The avoid toast started with a lower-case ingredient name. | W5 (before commit) |
 | — | A 31 MB local build of the server binary (`server`, from `go build ./cmd/...`) was committed in `6fdd950` and pushed. Removed and ignored; it is still in the git history unless that is rewritten. | after W4 |
+| — | Tapping a meal on the week page (or the draft card's link) opened a blank page: the links inherited `hx-select="#week"` from the SSE container. SSE containers now set `hx-disinherit="*"`; e2e test added. Was live in production (checked on `main`). | design A (before commit) |
+| — | After the restyle, week meal rows were centred and the recipe page's baby step split into two columns (old `.meal-link`, `.meal` and step rules). | design A (before commit) |

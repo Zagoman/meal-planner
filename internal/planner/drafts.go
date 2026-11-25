@@ -768,10 +768,12 @@ func (s *Service) mailDraftReady(ctx context.Context, q *db.Queries, householdID
 		return
 	}
 	at := confirmsAt(draft.WeekStart, p)
-	intro := fmt.Sprintf("Next week's plan has %d %s. Review it together and vote; it confirms itself %s at %s.",
+	_, week := draft.WeekStart.ISOWeek()
+	subject := fmt.Sprintf("Your plan for week %d is ready.", week)
+	intro := fmt.Sprintf("%d %s, ready for you to look over together. It confirms itself on %s at %s.",
 		meals, plural(meals, "meal", "meals"), at.Format("Monday"), at.Format("15:04"))
 	for _, m := range members {
-		msg := mail.Simple(m.Email, "Next week's plan is ready", intro, "Review the plan",
+		msg := mail.Simple(m.Email, subject, intro, "Review plan",
 			strings.TrimRight(s.opts.BaseURL, "/")+"/plans/next", "")
 		if err := s.opts.Mailer.Send(ctx, msg); err != nil {
 			s.opts.Logger.Error("draft email", "household_id", householdID, "err", err)

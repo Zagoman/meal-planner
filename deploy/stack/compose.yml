@@ -26,7 +26,7 @@ services:
       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-5-5}
       # Email (sign-in links, draft ready). Empty key: emails are not sent.
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM: ${EMAIL_FROM:-Meal Planner <meals@liluhome.dk>}
+      EMAIL_FROM: ${EMAIL_FROM:-Hvad skal vi ha'? <meals@liluhome.dk>}
       TZ: ${TZ:-Europe/Copenhagen}
     healthcheck:
       # distroless: no shell or curl, the binary checks itself.

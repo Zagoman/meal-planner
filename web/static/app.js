@@ -1,4 +1,4 @@
-// Meal Planner client. Small vanilla JS only (package C):
+// Hvad skal vi ha'? client. Small vanilla JS only (package C):
 //   - service worker registration
 //   - offline badge
 //   - offline tick queue (IndexedDB), sent in order when back online

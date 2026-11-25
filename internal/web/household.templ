@@ -129,7 +129,7 @@ templ InvitePage(token string, signedIn, canSignup bool) {
 				</form>
 			</section>
 		} else {
-			<p>You've been invited to join a household on Meal Planner.</p>
+			<p>You've been invited to join a household on <span lang="da">Hvad skal vi ha'?</span>.</p>
 			<section class="card">
 				<h2>I have an account</h2>
 				@LoginForm("/invite/"+token, "")
