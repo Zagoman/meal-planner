@@ -337,6 +337,13 @@ access for liluhome.dk, the SPF/DKIM/DMARC DNS records Resend gives you,
   fetcher refuses the home network, the resizer, and Playwright's offline
   test now reads the IndexedDB queue.
 
+**Deployed** 2026-11-25 as `8f0554231f97`. Dump first:
+`mealplanner-20261125-133829.dump`. Migration 6 applied (`recipe_drafts`,
+`list_items.tick_at`); plans and the list unchanged (1 active, 6 archived,
+188 list items). Recipe import needs the Anthropic key (set) and works
+without email.
+
 **Known issues**: G-26 to G-32 in GAPS.md.
 
-All five windows of the handoff are built.
+All five windows of the handoff are built and deployed. Still open from
+window 4: email (G-21) waits on the Resend, DNS and vault steps.
