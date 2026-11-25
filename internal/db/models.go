@@ -108,6 +108,17 @@ type ListItem struct {
 	AddedBy        uuid.NullUUID
 }
 
+type LoginToken struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+	MemberID    uuid.UUID
+	InviteID    uuid.NullUUID
+	TokenHash   []byte
+	ExpiresAt   time.Time
+	UsedAt      *time.Time
+	CreatedAt   time.Time
+}
+
 type Meal struct {
 	ID               uuid.UUID
 	HouseholdID      uuid.UUID
@@ -188,6 +199,7 @@ type Profile struct {
 	MealTargets     []byte
 	AutoConfirmTime pgtype.Time
 	TimeZone        string
+	SetupDone       bool
 }
 
 type Recipe struct {

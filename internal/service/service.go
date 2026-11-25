@@ -129,6 +129,9 @@ type Profiles interface {
 	// name) returns the existing entry.
 	AddAvoid(ctx context.Context, s domain.Scope, name string, source domain.AvoidSource) (domain.AvoidItem, error)
 	DeleteAvoid(ctx context.Context, s domain.Scope, id uuid.UUID) error
+	// Setup saves the four setup questions of a new household (meal
+	// counts, people, never-eat foods, shopping day) and marks it set up.
+	Setup(ctx context.Context, s domain.Scope, in domain.SetupInput) (domain.Profile, error)
 }
 
 // Feedback is ratings and the saved-recipe library.
@@ -140,8 +143,9 @@ type Feedback interface {
 
 // Households manages households, members and invites.
 type Households interface {
-	// Create makes a household with default profile and sections and adds
-	// adminEmail as its admin (creating the member if needed). Server admin only.
+	// Create makes a household with default profile and sections and a
+	// one-time admin invite (Household.Invite). A non-empty adminEmail is
+	// also added as admin (creating the member if needed). Server admin only.
 	Create(ctx context.Context, s domain.Scope, name, adminEmail string) (domain.Household, error)
 	Members(ctx context.Context, s domain.Scope) ([]domain.Member, error)
 	Memberships(ctx context.Context, s domain.Scope) ([]domain.Membership, error)
@@ -163,6 +167,17 @@ type Auth interface {
 	BearerScope(ctx context.Context, apiToken string) (domain.Scope, error)
 	SwitchHousehold(ctx context.Context, sessionToken string, householdID uuid.UUID) (domain.Scope, error)
 	CreateAPIToken(ctx context.Context, s domain.Scope, name string) (token string, err error)
+	// RequestLoginLink emails a single-use sign-in link (15 minutes). It
+	// answers the same whether or not the address has an account.
+	RequestLoginLink(ctx context.Context, email string) error
+	// SignInWithLink uses a link and returns a new session token. A link
+	// sent from an invite adds the membership.
+	SignInWithLink(ctx context.Context, linkToken string) (sessionToken string, s domain.Scope, err error)
+	// InvitePreview is the join page's view of a usable invite.
+	InvitePreview(ctx context.Context, inviteToken string) (domain.InvitePreview, error)
+	// Join answers an invite with a name and email: it emails a sign-in
+	// link that adds the membership when used.
+	Join(ctx context.Context, inviteToken, name, email string) error
 }
 
 // Services bundles everything the API and web layers need.

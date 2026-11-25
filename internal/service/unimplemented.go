@@ -183,3 +183,14 @@ func (Unimplemented) AddToNextWeek(context.Context, domain.Scope, uuid.UUID, dom
 func (Unimplemented) AddToThisWeek(context.Context, domain.Scope, uuid.UUID) (int, error) {
 	return 0, errNI
 }
+func (Unimplemented) RequestLoginLink(context.Context, string) error { return errNI }
+func (Unimplemented) SignInWithLink(context.Context, string) (string, domain.Scope, error) {
+	return "", domain.Scope{}, errNI
+}
+func (Unimplemented) InvitePreview(context.Context, string) (domain.InvitePreview, error) {
+	return domain.InvitePreview{}, errNI
+}
+func (Unimplemented) Join(context.Context, string, string, string) error { return errNI }
+func (Unimplemented) Setup(context.Context, domain.Scope, domain.SetupInput) (domain.Profile, error) {
+	return domain.Profile{}, errNI
+}

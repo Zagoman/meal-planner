@@ -21,6 +21,7 @@ import (
 	"github.com/Zagoman/meal-planner/internal/db"
 	"github.com/Zagoman/meal-planner/internal/domain"
 	"github.com/Zagoman/meal-planner/internal/events"
+	"github.com/Zagoman/meal-planner/internal/mail"
 	"github.com/Zagoman/meal-planner/internal/service"
 	"github.com/Zagoman/meal-planner/internal/shopping"
 )
@@ -43,7 +44,10 @@ type Options struct {
 	// Timeout bounds a whole Generate or SwapMeal (Config.GenerateTimeout).
 	Timeout time.Duration
 	// Wake, when set, is called after a job is queued (jobs.Worker.Wake).
-	Wake      func()
+	Wake func()
+	// Mailer and BaseURL send the "draft ready" email; nil Mailer: none.
+	Mailer    mail.Mailer
+	BaseURL   string
 	MaxTokens int
 	Now       func() time.Time
 	Logger    *slog.Logger

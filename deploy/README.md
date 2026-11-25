@@ -161,6 +161,48 @@ Keep Postgres data folders at mode `0700` in `appdata_dirs` (the patch and the
 homelab repo do): Postgres refuses to start on a group/world readable data
 directory.
 
+## Email (sign-in links, draft ready)
+
+Without these steps the app runs fine, but emails are only logged (never
+the link) and people sign in with a password. Steps marked **you** need
+your accounts.
+
+1. **Resend (you).** Create an account at resend.com, add the domain
+   `liluhome.dk` (or a subdomain such as `mail.liluhome.dk`), and turn open
+   and click tracking **off** for it.
+2. **DNS (you).** In Cloudflare, add the records Resend shows for the
+   domain: the SPF `TXT` (or `MX` + `TXT` on its bounce subdomain), the DKIM
+   `TXT` record(s), and a DMARC record, for example
+   `_dmarc.liluhome.dk TXT "v=DMARC1; p=quarantine; rua=mailto:you@example.com"`.
+   Wait until Resend says the domain is verified. Send nothing before that.
+3. **API key (you).** In Resend, create an API key with *sending access*
+   for that domain only. Put it in the vault:
+
+   ```bash
+   cd ~/dev/homelab-server/ansible
+   ansible-vault edit group_vars/all/secrets.yml
+   ```
+
+   ```yaml
+   vault_mealplanner_resend_api_key: "re_..."
+   ```
+4. **Homelab repo.** Apply the stack change (passes `RESEND_API_KEY` and
+   `EMAIL_FROM` to the app):
+
+   ```bash
+   cd ~/dev/homelab-server
+   git apply ~/dev/meal-planner/deploy/homelab/window4-email.patch
+   git add -A && git commit -m "Meal planner: email via Resend" && git push
+   ```
+
+   On the server: `cd /opt/stacks && git pull`, then re-run the playbook
+   (`ansible-playbook playbooks/site.yml`) so `.env` gets the key, and
+   `make deploy-only` (or `docker compose up -d` in the stack) to restart
+   the app with it. The sender is `Meal Planner <meals@liluhome.dk>`; change
+   `EMAIL_FROM` in the patch if you verified a subdomain.
+5. **Check.** On the login page, "Email me a sign-in link" with your
+   address; the app log shows no "email not sent" warning.
+
 ## Routine deploy
 
 ```bash

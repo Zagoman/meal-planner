@@ -191,7 +191,7 @@ func TestInvites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inv.Role != domain.RoleMember || inv.URL != "https://meals.example.test/invite/"+inv.Token {
+	if inv.Role != domain.RoleMember || inv.URL != "https://meals.example.test/join/"+inv.Token {
 		t.Errorf("invite: %+v", inv)
 	}
 	var stored int

@@ -148,8 +148,7 @@ func TestPagesRender(t *testing.T) {
 		{"/household", anna, []string{"Home", "Ben", "Invite someone", "Switch", "API tokens", `action="/logout"`}},
 		{"/logout", anna, []string{`action="/logout"`}},
 		{"/login", "", []string{`action="/login"`, `name="password"`}},
-		{"/invite/sometoken", "", []string{"I have an account", "new here", `value="/invite/sometoken"`}},
-		{"/invite/sometoken", anna, []string{"Join household", `action="/invite/sometoken/accept"`}},
+		{"/login", "", []string{`action="/auth/request"`, "Email me a sign-in link", "Sign in with a password"}},
 	}
 	for _, c := range cases {
 		rec := f.do(t, req{path: c.path, session: c.session})
@@ -625,7 +624,7 @@ func TestProfileForms(t *testing.T) {
 	}
 }
 
-var inviteURL = regexp.MustCompile(`value="` + regexp.QuoteMeta(origin) + `/invite/([A-Za-z0-9_-]+)"`)
+var inviteURL = regexp.MustCompile(`value="` + regexp.QuoteMeta(origin) + `/join/([A-Za-z0-9_-]+)"`)
 
 func TestInviteFlow(t *testing.T) {
 	t.Parallel()

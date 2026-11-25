@@ -38,6 +38,11 @@ func (h *handlers) reviewPage(w http.ResponseWriter, r *http.Request) {
 	s := scope(r)
 	rev, err := h.svc.Drafts.Review(r.Context(), s)
 	if errors.Is(err, domain.ErrNotFound) {
+		// Being made (or it failed): wait here; the card updates over SSE.
+		if c, cerr := h.svc.Drafts.Card(r.Context(), s); cerr == nil && (c.State == domain.DraftMaking || c.State == domain.DraftFailed) {
+			h.render(w, r, http.StatusOK, WaitingPage(c))
+			return
+		}
 		redirect(w, r, "/week")
 		return
 	}

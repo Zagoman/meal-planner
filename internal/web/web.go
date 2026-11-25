@@ -90,11 +90,24 @@ func Routes(d app.Deps) http.Handler {
 	r.Post("/login", h.login)
 	r.Get("/logout", h.logoutPage)
 	r.Post("/logout", h.logout)
-	r.Get("/invite/{token}", h.invitePage)
+	r.Get("/invite/{token}", h.oldInvite)
 	r.Post("/invite/{token}/signup", h.inviteSignup)
+	r.Get("/join/{token}", h.joinPage)
+	r.Post("/join/{token}", h.join)
+	r.Post("/auth/request", h.requestLink)
+	r.Get("/auth/{token}", h.authPage)
+	r.Post("/auth/{token}", h.authSignIn)
 
 	r.Group(func(r chi.Router) {
 		r.Use(h.requireAuth)
+		r.Get("/setup", h.setupPage)
+		r.Post("/setup", h.setup)
+		r.Post("/households/invites", h.createInvite)
+		r.Post("/households/{id}/switch", h.switchTo)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(h.requireAuth, h.requireSetup)
 		r.Get("/", h.listPage)
 		r.Get("/list", h.listPage)
 		r.Get("/list/stream", h.listStream)

@@ -6,8 +6,12 @@ templ LoginPage(next, email, errMsg string) {
 			<div class="flash error" role="alert"><p>{ errMsg }</p></div>
 		}
 		<section class="card">
-			@LoginForm(next, email)
+			@LinkLoginForm(email)
 		</section>
+		<details class="card">
+			<summary>Sign in with a password</summary>
+			@LoginForm(next, email)
+		</details>
 	}
 }
 

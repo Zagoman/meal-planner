@@ -8,7 +8,8 @@ async function login(browser: Browser, email: string, serviceWorkers: "allow" | 
   const page = await ctx.newPage();
   await page.goto("/");
   await expect(page).toHaveURL(/\/login/);
-  await page.getByLabel("Email").fill(email);
+  await page.getByText("Sign in with a password").click();
+  await page.locator("details").getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();

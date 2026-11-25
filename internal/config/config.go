@@ -19,6 +19,8 @@ type Config struct {
 	AnthropicAPIKey string // ANTHROPIC_API_KEY; empty disables plan generation
 	ClaudeModel     string // CLAUDE_MODEL, required when the key is set
 	AdminEmail      string // ADMIN_EMAIL: this member is the server admin
+	ResendAPIKey    string // RESEND_API_KEY; empty: emails are only logged
+	EmailFrom       string // EMAIL_FROM, default "Meal Planner <meals@liluhome.dk>"
 	GenerateTimeout time.Duration
 }
 
@@ -31,6 +33,8 @@ func Load() (Config, error) {
 		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
 		ClaudeModel:     os.Getenv("CLAUDE_MODEL"),
 		AdminEmail:      strings.ToLower(strings.TrimSpace(os.Getenv("ADMIN_EMAIL"))),
+		ResendAPIKey:    os.Getenv("RESEND_API_KEY"),
+		EmailFrom:       env("EMAIL_FROM", "Meal Planner <meals@liluhome.dk>"),
 		GenerateTimeout: 55 * time.Second, // spec: a plan takes under 60 s
 	}
 	var errs []error

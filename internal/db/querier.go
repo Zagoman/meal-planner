@@ -36,6 +36,7 @@ type Querier interface {
 	CreateHousehold(ctx context.Context, name string) (Household, error)
 	CreateIngredient(ctx context.Context, arg CreateIngredientParams) error
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
+	CreateLoginToken(ctx context.Context, arg CreateLoginTokenParams) (LoginToken, error)
 	CreateMeal(ctx context.Context, arg CreateMealParams) (Meal, error)
 	CreateMember(ctx context.Context, arg CreateMemberParams) (Member, error)
 	CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error)
@@ -72,6 +73,7 @@ type Querier interface {
 	GetDraftPlan(ctx context.Context, householdID uuid.UUID) (Plan, error)
 	GetDraftPlanForWeek(ctx context.Context, arg GetDraftPlanForWeekParams) (Plan, error)
 	GetHousehold(ctx context.Context, id uuid.UUID) (Household, error)
+	GetInvite(ctx context.Context, arg GetInviteParams) (Invite, error)
 	GetInviteByTokenHash(ctx context.Context, tokenHash []byte) (Invite, error)
 	GetJob(ctx context.Context, arg GetJobParams) (Job, error)
 	GetListItem(ctx context.Context, arg GetListItemParams) (ListItem, error)
@@ -94,6 +96,8 @@ type Querier interface {
 	InsertUsage(ctx context.Context, arg InsertUsageParams) error
 	LatestJob(ctx context.Context, arg LatestJobParams) (Job, error)
 	LatestMealJob(ctx context.Context, arg LatestMealJobParams) (Job, error)
+	// The household a member signs in to by default: the one joined last.
+	LatestMembership(ctx context.Context, memberID uuid.UUID) (HouseholdMember, error)
 	LatestRecipeJob(ctx context.Context, arg LatestRecipeJobParams) (Job, error)
 	ListAPITokens(ctx context.Context, arg ListAPITokensParams) ([]ApiToken, error)
 	ListAvoidItems(ctx context.Context, householdID uuid.UUID) ([]AvoidItem, error)
@@ -105,6 +109,7 @@ type Querier interface {
 	ListItemsForPlan(ctx context.Context, arg ListItemsForPlanParams) ([]ListItem, error)
 	// Suggested day (meals without one last), then meal type, then position.
 	ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error)
+	ListMemberEmails(ctx context.Context, householdID uuid.UUID) ([]ListMemberEmailsRow, error)
 	ListMemberHouseholds(ctx context.Context, memberID uuid.UUID) ([]ListMemberHouseholdsRow, error)
 	// Meals of a plan marked not cooked whose recipe is not in another plan.
 	ListNotCooked(ctx context.Context, arg ListNotCookedParams) ([]ListNotCookedRow, error)
@@ -122,6 +127,8 @@ type Querier interface {
 	ListVotesForPlan(ctx context.Context, arg ListVotesForPlanParams) ([]ListVotesForPlanRow, error)
 	LockPlan(ctx context.Context, arg LockPlanParams) (Plan, error)
 	MaxMealPosition(ctx context.Context, arg MaxMealPositionParams) (int32, error)
+	// Links sent to a member in the last minute (throttles "email me a link").
+	RecentLoginTokens(ctx context.Context, memberID uuid.UUID) (int64, error)
 	RecipeStats(ctx context.Context, arg RecipeStatsParams) (RecipeStatsRow, error)
 	// Jobs left running by a crash: run again, or give up after three tries.
 	RecoverStaleJobs(ctx context.Context, before time.Time) (int64, error)
@@ -139,7 +146,9 @@ type Querier interface {
 	SetListItemHaveIt(ctx context.Context, arg SetListItemHaveItParams) (ListItem, error)
 	SetMealPosition(ctx context.Context, arg SetMealPositionParams) error
 	SetMealRecipe(ctx context.Context, arg SetMealRecipeParams) error
+	SetMemberName(ctx context.Context, arg SetMemberNameParams) error
 	SetServerAdmin(ctx context.Context, arg SetServerAdminParams) error
+	SetSetupDone(ctx context.Context, householdID uuid.UUID) error
 	SwitchSessionHousehold(ctx context.Context, arg SwitchSessionHouseholdParams) error
 	TouchAPIToken(ctx context.Context, id uuid.UUID) error
 	UpdateIngredient(ctx context.Context, arg UpdateIngredientParams) (int64, error)
@@ -153,6 +162,8 @@ type Querier interface {
 	UpsertOutcome(ctx context.Context, arg UpsertOutcomeParams) (MealOutcome, error)
 	UpsertVote(ctx context.Context, arg UpsertVoteParams) error
 	UsageByHousehold(ctx context.Context, since time.Time) ([]UsageByHouseholdRow, error)
+	// Single use: only an unused, unexpired link matches, even under races.
+	UseLoginToken(ctx context.Context, tokenHash []byte) (LoginToken, error)
 }
 
 var _ Querier = (*Queries)(nil)

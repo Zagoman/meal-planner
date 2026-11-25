@@ -9,7 +9,8 @@ async function login(browser: Browser, email: string): Promise<Page> {
   const page = await ctx.newPage();
   await page.goto("/week");
   await expect(page).toHaveURL(/\/login/);
-  await page.getByLabel("Email").fill(email);
+  await page.getByText("Sign in with a password").click();
+  await page.locator("details").getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByRole("heading", { name: "This week", exact: true })).toBeVisible();

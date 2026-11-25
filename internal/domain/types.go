@@ -96,6 +96,16 @@ type Household struct {
 	ID        uuid.UUID `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+	// Invite is set when a household is created: the one-time link its
+	// first admin joins with.
+	Invite *Invite `json:"invite,omitempty"`
+}
+
+// InvitePreview is what the join page shows about an invite.
+type InvitePreview struct {
+	HouseholdName string    `json:"household_name"`
+	InviterName   string    `json:"inviter_name,omitempty"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 type Member struct {
@@ -148,8 +158,10 @@ type Profile struct {
 	ShoppingDay     Weekday  `json:"shopping_day"`
 	AutoConfirmTime string   `json:"auto_confirm_time"` // "08:00", household time zone
 	TimeZone        string   `json:"time_zone"`         // IANA name, default Europe/Copenhagen
-	BabyPortions    bool     `json:"baby_portions"`
-	Language        string   `json:"language"`
+	// SetupDone: the household answered the four setup questions.
+	SetupDone    bool   `json:"setup_done"`
+	BabyPortions bool   `json:"baby_portions"`
+	Language     string `json:"language"`
 }
 
 // TotalMeals is the sum of the meal targets.

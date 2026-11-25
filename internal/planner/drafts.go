@@ -17,6 +17,7 @@ import (
 	"github.com/Zagoman/meal-planner/internal/domain"
 	"github.com/Zagoman/meal-planner/internal/events"
 	"github.com/Zagoman/meal-planner/internal/jobs"
+	"github.com/Zagoman/meal-planner/internal/mail"
 	"github.com/Zagoman/meal-planner/internal/service"
 	"github.com/Zagoman/meal-planner/internal/shopping"
 )
@@ -732,7 +733,49 @@ func (s *Service) runDraft(ctx context.Context, job db.Job) (any, error) {
 		return nil, fmt.Errorf("%w: save draft: %w", domain.ErrGeneration, err)
 	}
 	s.publishEvent(sc.HouseholdID, events.Event{Kind: events.PlanUpdated})
+	// Email everyone for the weekly draft (a scheduled job) and for a
+	// household's very first plan; not when someone tapped "make it now".
+	if job.DedupeKey.Valid || s.firstPlan(ctx, sc.HouseholdID) {
+		s.mailDraftReady(context.WithoutCancel(ctx), q, sc.HouseholdID, draft, len(mp.Meals)+len(kept))
+	}
 	return map[string]any{"plan_id": draft.ID}, nil
+}
+
+// firstPlan reports whether the household has no plan besides its draft.
+func (s *Service) firstPlan(ctx context.Context, householdID uuid.UUID) bool {
+	var n int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM plans WHERE household_id = $1 AND status <> 'draft'`, householdID).Scan(&n); err != nil {
+		return false
+	}
+	return n == 0
+}
+
+// mailDraftReady emails every member that next week's plan is ready.
+// Failures are logged; the draft is there either way.
+func (s *Service) mailDraftReady(ctx context.Context, q *db.Queries, householdID uuid.UUID, draft db.Plan, meals int) {
+	if s.opts.Mailer == nil {
+		return
+	}
+	p, err := s.profile(ctx, q, householdID)
+	if err != nil {
+		s.opts.Logger.Error("draft email: profile", "household_id", householdID, "err", err)
+		return
+	}
+	members, err := q.ListMemberEmails(ctx, householdID)
+	if err != nil {
+		s.opts.Logger.Error("draft email: members", "household_id", householdID, "err", err)
+		return
+	}
+	at := confirmsAt(draft.WeekStart, p)
+	intro := fmt.Sprintf("Next week's plan has %d %s. Review it together and vote; it confirms itself %s at %s.",
+		meals, plural(meals, "meal", "meals"), at.Format("Monday"), at.Format("15:04"))
+	for _, m := range members {
+		msg := mail.Simple(m.Email, "Next week's plan is ready", intro, "Review the plan",
+			strings.TrimRight(s.opts.BaseURL, "/")+"/plans/next", "")
+		if err := s.opts.Mailer.Send(ctx, msg); err != nil {
+			s.opts.Logger.Error("draft email", "household_id", householdID, "err", err)
+		}
+	}
 }
 
 // runSwap replaces one draft meal in place.

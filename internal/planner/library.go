@@ -449,8 +449,11 @@ func (s *Service) AddToThisWeek(ctx context.Context, sc domain.Scope, recipeID u
 		return 0, err
 	}
 	active, err := q.GetActivePlan(ctx, sc.HouseholdID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("there is no plan this week to add to: %w", domain.ErrConflict)
+	}
 	if err != nil {
-		return 0, notFound("active plan", err)
+		return 0, fmt.Errorf("active plan: %w", err)
 	}
 	secRows, err := q.ListSections(ctx, sc.HouseholdID)
 	if err != nil {

@@ -1,0 +1,51 @@
+diff --color -ruN a/ansible/examples/secrets.example.yml b/ansible/examples/secrets.example.yml
+--- a/ansible/examples/secrets.example.yml	2026-11-25 09:29:55
++++ b/ansible/examples/secrets.example.yml	2026-11-25 09:29:55
+@@ -18,3 +18,4 @@
+ vault_mealplanner_session_secret: ""     # openssl rand -hex 32
+ vault_mealplanner_anthropic_api_key: ""  # sk-ant-...; empty disables plan generation
+ vault_mealplanner_admin_email: ""        # the server admin's login email
++vault_mealplanner_resend_api_key: ""     # re_..., sending access for liluhome.dk (empty = no email)
+diff --color -ruN a/ansible/group_vars/all/main.yml b/ansible/group_vars/all/main.yml
+--- a/ansible/group_vars/all/main.yml	2026-11-25 09:29:55
++++ b/ansible/group_vars/all/main.yml	2026-11-25 09:29:55
+@@ -199,6 +199,8 @@
+     SESSION_SECRET: "{{ vault_mealplanner_session_secret }}"
+     ANTHROPIC_API_KEY: "{{ vault_mealplanner_anthropic_api_key }}"
+     CLAUDE_MODEL: "claude-sonnet-5-5"
++    RESEND_API_KEY: "{{ vault_mealplanner_resend_api_key }}"
++    EMAIL_FROM: "Meal Planner <meals@liluhome.dk>"
+     POSTGRES_PASSWORD: "{{ vault_mealplanner_db_password }}"
+     DATABASE_URL: "postgres://mealplanner:{{ vault_mealplanner_db_password }}@db:5432/mealplanner?sslmode=disable"
+   caddy:
+@@ -250,4 +252,5 @@
+ vault_mealplanner_db_password: ""
+ vault_mealplanner_session_secret: ""
+ vault_mealplanner_anthropic_api_key: ""
+-vault_mealplanner_admin_email: ""
+\ No newline at end of file
++vault_mealplanner_admin_email: ""
++vault_mealplanner_resend_api_key: ""
+\ No newline at end of file
+diff --color -ruN a/mealplanner/compose.yml b/mealplanner/compose.yml
+--- a/mealplanner/compose.yml	2026-11-25 09:29:55
++++ b/mealplanner/compose.yml	2026-11-25 09:29:55
+@@ -5,7 +5,7 @@
+ #
+ # .env is rendered by Ansible (stack_env.mealplanner): APPDATA_DIR,
+ # POSTGRES_PASSWORD, DATABASE_URL, SESSION_SECRET, BASE_URL, ADMIN_EMAIL,
+-# ANTHROPIC_API_KEY, CLAUDE_MODEL, TZ.
++# ANTHROPIC_API_KEY, CLAUDE_MODEL, RESEND_API_KEY, EMAIL_FROM, TZ.
+ name: mealplanner
+ 
+ services:
+@@ -24,6 +24,9 @@
+       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-5-5}
++      # Email (sign-in links, draft ready). Empty key: emails are not sent.
++      RESEND_API_KEY: ${RESEND_API_KEY:-}
++      EMAIL_FROM: ${EMAIL_FROM:-Meal Planner <meals@liluhome.dk>}
+       TZ: ${TZ:-Europe/Copenhagen}
+     healthcheck:
+       # distroless: no shell or curl, the binary checks itself.

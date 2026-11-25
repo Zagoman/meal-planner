@@ -276,9 +276,13 @@ func (s *Store) AddToThisWeek(_ context.Context, sc domain.Scope, recipeID uuid.
 		return 0, err
 	}
 	r, err := h.recipeByID(recipeID)
-	if err != nil || h.plan == nil {
+	if err != nil {
 		s.mu.Unlock()
-		return 0, fmt.Errorf("add to this week: %w", domain.ErrNotFound)
+		return 0, err
+	}
+	if h.plan == nil {
+		s.mu.Unlock()
+		return 0, fmt.Errorf("there is no plan this week to add to: %w", domain.ErrConflict)
 	}
 	have := map[string]bool{}
 	for _, it := range h.items {

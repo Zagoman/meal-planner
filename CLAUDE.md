@@ -108,6 +108,10 @@ new files (`00003_...sql`), never edits to an applied one.
   arrives as an `events.Event`, a failed job changes no data. Handlers must
   be idempotent (crash retries; scheduled jobs use a dedupe key). Drafts:
   `service.Drafts`; schedules: `planner.Tick` in the household time zone.
+- Email goes through `internal/mail` (Resend; log-only without a key; a
+  recorder in tests). Never log a sign-in link or put tracking in an email.
+  Sign-in links (`login_tokens`) and invites are single use; a join adds the
+  membership only when the emailed link is used.
 - SSE: `GET /events` sends per-partial events (`list.item`, `meal.updated`,
   `meal-<id>`, `plan.updated`, `job.failed`); pages refetch the partial
   with `hx-trigger="sse:<name>"`. Every partial has a stable id.

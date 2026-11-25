@@ -72,7 +72,7 @@ func (q *Queries) DeleteSections(ctx context.Context, householdID uuid.UUID) err
 }
 
 const getProfile = `-- name: GetProfile :one
-SELECT household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time, time_zone FROM profiles WHERE household_id = $1
+SELECT household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time, time_zone, setup_done FROM profiles WHERE household_id = $1
 `
 
 func (q *Queries) GetProfile(ctx context.Context, householdID uuid.UUID) (Profile, error) {
@@ -92,6 +92,7 @@ func (q *Queries) GetProfile(ctx context.Context, householdID uuid.UUID) (Profil
 		&i.MealTargets,
 		&i.AutoConfirmTime,
 		&i.TimeZone,
+		&i.SetupDone,
 	)
 	return i, err
 }
@@ -261,6 +262,15 @@ func (q *Queries) ListSections(ctx context.Context, householdID uuid.UUID) ([]St
 	return items, nil
 }
 
+const setSetupDone = `-- name: SetSetupDone :exec
+UPDATE profiles SET setup_done = true, updated_at = now() WHERE household_id = $1
+`
+
+func (q *Queries) SetSetupDone(ctx context.Context, householdID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, setSetupDone, householdID)
+	return err
+}
+
 const updateProfile = `-- name: UpdateProfile :one
 UPDATE profiles SET
     meal_targets      = $2,
@@ -275,7 +285,7 @@ UPDATE profiles SET
     auto_confirm_time = $11,
     updated_at        = now()
 WHERE household_id = $1
-RETURNING household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time, time_zone
+RETURNING household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time, time_zone, setup_done
 `
 
 type UpdateProfileParams struct {
@@ -321,6 +331,7 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		&i.MealTargets,
 		&i.AutoConfirmTime,
 		&i.TimeZone,
+		&i.SetupDone,
 	)
 	return i, err
 }

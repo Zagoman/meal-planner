@@ -5,7 +5,7 @@
 #
 # .env is rendered by Ansible (stack_env.mealplanner): APPDATA_DIR,
 # POSTGRES_PASSWORD, DATABASE_URL, SESSION_SECRET, BASE_URL, ADMIN_EMAIL,
-# ANTHROPIC_API_KEY, CLAUDE_MODEL, TZ.
+# ANTHROPIC_API_KEY, CLAUDE_MODEL, RESEND_API_KEY, EMAIL_FROM, TZ.
 name: mealplanner
 
 services:
@@ -24,6 +24,9 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-5-5}
+      # Email (sign-in links, draft ready). Empty key: emails are not sent.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-Meal Planner <meals@liluhome.dk>}
       TZ: ${TZ:-Europe/Copenhagen}
     healthcheck:
       # distroless: no shell or curl, the binary checks itself.

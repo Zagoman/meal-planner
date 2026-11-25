@@ -58,22 +58,28 @@ func (s *Service) Create(ctx context.Context, sc domain.Scope, name, adminEmail 
 	if name == "" || len(name) > 100 {
 		problems = append(problems, "name: 1 to 100 characters")
 	}
-	if !strings.Contains(adminEmail, "@") || len(adminEmail) > 254 {
+	if adminEmail != "" && (!strings.Contains(adminEmail, "@") || len(adminEmail) > 254) {
 		problems = append(problems, "admin_email: not a valid address")
 	}
 	if len(problems) > 0 {
 		return domain.Household{}, &domain.ValidationError{Problems: problems}
 	}
 	var h db.Household
+	var inv domain.Invite
 	err := s.inTx(ctx, func(q *db.Queries) error {
 		var err error
 		h, _, err = createHousehold(ctx, q, name, adminEmail, s.adminEmail)
+		if err != nil {
+			return err
+		}
+		// The first admin joins with this one-time link.
+		inv, err = s.createInvite(ctx, q, h.ID, uuid.Nil, domain.RoleAdmin)
 		return err
 	})
 	if err != nil {
 		return domain.Household{}, fmt.Errorf("create household: %w", err)
 	}
-	return domain.Household{ID: h.ID, Name: h.Name, CreatedAt: h.CreatedAt}, nil
+	return domain.Household{ID: h.ID, Name: h.Name, CreatedAt: h.CreatedAt, Invite: &inv}, nil
 }
 
 // createHousehold makes the household with its default profile and
@@ -83,6 +89,12 @@ func createHousehold(ctx context.Context, q *db.Queries, name, adminEmail, serve
 	h, err := q.CreateHousehold(ctx, name)
 	if err != nil {
 		return db.Household{}, db.Member{}, err
+	}
+	if err := createDefaults(ctx, q, h.ID); err != nil {
+		return db.Household{}, db.Member{}, err
+	}
+	if adminEmail == "" {
+		return h, db.Member{}, nil
 	}
 	m, err := q.GetMemberByEmail(ctx, adminEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -98,17 +110,23 @@ func createHousehold(ctx context.Context, q *db.Queries, name, adminEmail, serve
 	}); err != nil {
 		return db.Household{}, db.Member{}, err
 	}
-	if err := q.CreateProfile(ctx, h.ID); err != nil {
-		return db.Household{}, db.Member{}, err
+	return h, m, nil
+}
+
+// createDefaults gives a new household its profile (not set up yet) and
+// the default shop sections.
+func createDefaults(ctx context.Context, q *db.Queries, householdID uuid.UUID) error {
+	if err := q.CreateProfile(ctx, householdID); err != nil {
+		return err
 	}
 	for _, sec := range domain.DefaultSections {
 		if err := q.InsertSection(ctx, db.InsertSectionParams{
-			HouseholdID: h.ID, Key: sec.Key, Name: sec.Name, SortOrder: int32(sec.SortOrder), //nolint:gosec // small constant
+			HouseholdID: householdID, Key: sec.Key, Name: sec.Name, SortOrder: int32(sec.SortOrder), //nolint:gosec // small constant
 		}); err != nil {
-			return db.Household{}, db.Member{}, err
+			return err
 		}
 	}
-	return h, m, nil
+	return nil
 }
 
 // Bootstrap makes sure the server admin exists. If no member has
@@ -179,17 +197,27 @@ func (s *Service) CreateInvite(ctx context.Context, sc domain.Scope, role domain
 	if role != domain.RoleMember && role != domain.RoleAdmin {
 		return domain.Invite{}, &domain.ValidationError{Problems: []string{"role: must be admin or member"}}
 	}
-	token, hash := auth.NewToken()
-	inv, err := s.q.CreateInvite(ctx, db.CreateInviteParams{
-		HouseholdID: sc.HouseholdID, TokenHash: hash, Role: string(role),
-		CreatedBy: uuid.NullUUID{UUID: sc.MemberID, Valid: true}, ExpiresAt: time.Now().Add(InviteTTL),
-	})
+	inv, err := s.createInvite(ctx, s.q, sc.HouseholdID, sc.MemberID, role)
 	if err != nil {
 		return domain.Invite{}, fmt.Errorf("create invite: %w", err)
 	}
+	return inv, nil
+}
+
+// createInvite stores a one-time invite (valid InviteTTL) and returns its
+// link, /join/{token}, shown once.
+func (s *Service) createInvite(ctx context.Context, q *db.Queries, householdID, by uuid.UUID, role domain.Role) (domain.Invite, error) {
+	token, hash := auth.NewToken()
+	inv, err := q.CreateInvite(ctx, db.CreateInviteParams{
+		HouseholdID: householdID, TokenHash: hash, Role: string(role),
+		CreatedBy: uuid.NullUUID{UUID: by, Valid: by != uuid.Nil}, ExpiresAt: time.Now().Add(InviteTTL),
+	})
+	if err != nil {
+		return domain.Invite{}, err
+	}
 	return domain.Invite{
 		ID: inv.ID, Role: domain.Role(inv.Role), ExpiresAt: inv.ExpiresAt,
-		Token: token, URL: s.baseURL + "/invite/" + token,
+		Token: token, URL: s.baseURL + "/join/" + token,
 	}, nil
 }
 

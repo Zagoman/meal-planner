@@ -133,6 +133,41 @@ func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (Inv
 	return i, err
 }
 
+const createLoginToken = `-- name: CreateLoginToken :one
+INSERT INTO login_tokens (household_id, member_id, invite_id, token_hash, expires_at)
+VALUES ($1, $2, $5, $3, $4) RETURNING id, household_id, member_id, invite_id, token_hash, expires_at, used_at, created_at
+`
+
+type CreateLoginTokenParams struct {
+	HouseholdID uuid.UUID
+	MemberID    uuid.UUID
+	TokenHash   []byte
+	ExpiresAt   time.Time
+	InviteID    uuid.NullUUID
+}
+
+func (q *Queries) CreateLoginToken(ctx context.Context, arg CreateLoginTokenParams) (LoginToken, error) {
+	row := q.db.QueryRow(ctx, createLoginToken,
+		arg.HouseholdID,
+		arg.MemberID,
+		arg.TokenHash,
+		arg.ExpiresAt,
+		arg.InviteID,
+	)
+	var i LoginToken
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.MemberID,
+		&i.InviteID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createMember = `-- name: CreateMember :one
 INSERT INTO members (email, name, password_hash, is_server_admin)
 VALUES ($1, $2, $3, $4) RETURNING id, email, name, password_hash, is_server_admin, created_at
@@ -258,6 +293,32 @@ func (q *Queries) GetHousehold(ctx context.Context, id uuid.UUID) (Household, er
 	return i, err
 }
 
+const getInvite = `-- name: GetInvite :one
+SELECT id, household_id, token_hash, role, created_by, expires_at, accepted_at, accepted_by, created_at FROM invites WHERE id = $1 AND household_id = $2
+`
+
+type GetInviteParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) GetInvite(ctx context.Context, arg GetInviteParams) (Invite, error) {
+	row := q.db.QueryRow(ctx, getInvite, arg.ID, arg.HouseholdID)
+	var i Invite
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.TokenHash,
+		&i.Role,
+		&i.CreatedBy,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.AcceptedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getInviteByTokenHash = `-- name: GetInviteByTokenHash :one
 SELECT id, household_id, token_hash, role, created_by, expires_at, accepted_at, accepted_by, created_at FROM invites WHERE token_hash = $1
 `
@@ -350,6 +411,23 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (
 		&i.TokenHash,
 		&i.CreatedAt,
 		&i.ExpiresAt,
+	)
+	return i, err
+}
+
+const latestMembership = `-- name: LatestMembership :one
+SELECT household_id, member_id, role, created_at FROM household_members WHERE member_id = $1 ORDER BY created_at DESC LIMIT 1
+`
+
+// The household a member signs in to by default: the one joined last.
+func (q *Queries) LatestMembership(ctx context.Context, memberID uuid.UUID) (HouseholdMember, error) {
+	row := q.db.QueryRow(ctx, latestMembership, memberID)
+	var i HouseholdMember
+	err := row.Scan(
+		&i.HouseholdID,
+		&i.MemberID,
+		&i.Role,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -492,6 +570,36 @@ func (q *Queries) ListInvites(ctx context.Context, householdID uuid.UUID) ([]Inv
 	return items, nil
 }
 
+const listMemberEmails = `-- name: ListMemberEmails :many
+SELECT m.email, m.name FROM household_members hm JOIN members m ON m.id = hm.member_id
+WHERE hm.household_id = $1 ORDER BY hm.created_at
+`
+
+type ListMemberEmailsRow struct {
+	Email string
+	Name  string
+}
+
+func (q *Queries) ListMemberEmails(ctx context.Context, householdID uuid.UUID) ([]ListMemberEmailsRow, error) {
+	rows, err := q.db.Query(ctx, listMemberEmails, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMemberEmailsRow{}
+	for rows.Next() {
+		var i ListMemberEmailsRow
+		if err := rows.Scan(&i.Email, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMemberHouseholds = `-- name: ListMemberHouseholds :many
 SELECT h.id, h.name, hm.role
 FROM household_members hm
@@ -526,6 +634,18 @@ func (q *Queries) ListMemberHouseholds(ctx context.Context, memberID uuid.UUID) 
 	return items, nil
 }
 
+const recentLoginTokens = `-- name: RecentLoginTokens :one
+SELECT count(*) FROM login_tokens WHERE member_id = $1 AND created_at > now() - interval '1 minute'
+`
+
+// Links sent to a member in the last minute (throttles "email me a link").
+func (q *Queries) RecentLoginTokens(ctx context.Context, memberID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, recentLoginTokens, memberID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const removeHouseholdMember = `-- name: RemoveHouseholdMember :exec
 DELETE FROM household_members WHERE household_id = $1 AND member_id = $2
 `
@@ -552,6 +672,20 @@ type RevokeAPITokenParams struct {
 
 func (q *Queries) RevokeAPIToken(ctx context.Context, arg RevokeAPITokenParams) error {
 	_, err := q.db.Exec(ctx, revokeAPIToken, arg.ID, arg.HouseholdID, arg.MemberID)
+	return err
+}
+
+const setMemberName = `-- name: SetMemberName :exec
+UPDATE members SET name = $2 WHERE id = $1 AND name = ''
+`
+
+type SetMemberNameParams struct {
+	ID   uuid.UUID
+	Name string
+}
+
+func (q *Queries) SetMemberName(ctx context.Context, arg SetMemberNameParams) error {
+	_, err := q.db.Exec(ctx, setMemberName, arg.ID, arg.Name)
 	return err
 }
 
@@ -604,4 +738,27 @@ type UpdateMemberPasswordParams struct {
 func (q *Queries) UpdateMemberPassword(ctx context.Context, arg UpdateMemberPasswordParams) error {
 	_, err := q.db.Exec(ctx, updateMemberPassword, arg.ID, arg.PasswordHash)
 	return err
+}
+
+const useLoginToken = `-- name: UseLoginToken :one
+UPDATE login_tokens SET used_at = now()
+WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+RETURNING id, household_id, member_id, invite_id, token_hash, expires_at, used_at, created_at
+`
+
+// Single use: only an unused, unexpired link matches, even under races.
+func (q *Queries) UseLoginToken(ctx context.Context, tokenHash []byte) (LoginToken, error) {
+	row := q.db.QueryRow(ctx, useLoginToken, tokenHash)
+	var i LoginToken
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.MemberID,
+		&i.InviteID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }

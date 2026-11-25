@@ -383,6 +383,18 @@
     clearTimers();
   });
 
+  // ---- setup steppers (− / + next to a number input) -------------------------
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest("button[data-step][data-for]");
+    if (!btn) return;
+    const input = document.getElementById(btn.dataset.for);
+    if (!input) return;
+    const min = Number(input.min || 0), max = Number(input.max || 99);
+    const next = Math.min(max, Math.max(min, (Number(input.value) || 0) + Number(btn.dataset.step)));
+    input.value = String(next);
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
   // ---- start ---------------------------------------------------------------
   function init() {
     applyQueue();

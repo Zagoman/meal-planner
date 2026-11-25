@@ -48,23 +48,10 @@ func (h *handlers) changePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) householdPage(w http.ResponseWriter, r *http.Request) {
-	s := scope(r)
-	members, err := h.svc.Households.Members(r.Context(), s)
+	v, err := h.householdView(r)
 	if err != nil {
 		h.fail(w, r, err)
 		return
-	}
-	ms, err := h.svc.Households.Memberships(r.Context(), s)
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
-	_, canChange := h.svc.Auth.(PasswordChanger)
-	v := householdView{Scope: s, Members: members, Memberships: ms, Name: "Your household", CanChangePassword: canChange}
-	for _, m := range ms {
-		if m.HouseholdID == s.HouseholdID {
-			v.Name = m.HouseholdName
-		}
 	}
 	h.render(w, r, http.StatusOK, HouseholdPage(v))
 }
@@ -77,7 +64,7 @@ func (h *handlers) createInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	link := inv.URL
 	if link == "" {
-		link = h.baseURL + "/invite/" + url.PathEscape(inv.Token)
+		link = h.baseURL + "/join/" + url.PathEscape(inv.Token)
 	}
 	label := fmt.Sprintf("Invite link (%s, expires %s)", inv.Role, inv.ExpiresAt.Format("2 Jan"))
 	h.render(w, r, http.StatusOK, ShownOnce(label, link))
@@ -107,13 +94,7 @@ func (h *handlers) switchHousehold(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	redirect(w, r, "/")
-}
-
-func (h *handlers) invitePage(w http.ResponseWriter, r *http.Request) {
-	_, signedIn := domain.ScopeFrom(r.Context())
-	_, canSignup := h.svc.Auth.(InviteSignup)
-	h.render(w, r, http.StatusOK, InvitePage(chi.URLParam(r, "token"), signedIn, canSignup))
+	redirect(w, r, "/week")
 }
 
 func (h *handlers) inviteFailed(w http.ResponseWriter, r *http.Request, err error) {

@@ -1,0 +1,184 @@
+package web
+
+import "github.com/Zagoman/meal-planner/internal/domain"
+
+// ---- Sign in by email ---------------------------------------------------------
+
+// LinkLoginForm asks for an email and sends a sign-in link.
+templ LinkLoginForm(email string) {
+	<form class="stack" action="/auth/request" method="post">
+		<label>Email <input type="email" name="email" required autocomplete="email" value={ email } placeholder="you@example.com"/></label>
+		<button type="submit" class="primary">Email me a sign-in link</button>
+	</form>
+}
+
+// CheckInboxPage answers every link request the same way, so it never says
+// who has an account.
+templ CheckInboxPage(email string) {
+	@Layout("Check your inbox", TabNone) {
+		<section class="card stack">
+			<p>If <strong>{ email }</strong> has an account, a sign-in link is on its way. It works once and expires in 15 minutes.</p>
+			<p class="muted small">Nothing arrived? Check spam, or <a href="/login">ask for a new link</a>.</p>
+		</section>
+	}
+}
+
+// AuthConfirmPage is where the emailed link lands. Signing in takes a tap:
+// mail scanners that open links do not use them up.
+templ AuthConfirmPage(token string) {
+	@Layout("Sign in", TabNone) {
+		<section class="card stack">
+			<p>Tap to finish signing in.</p>
+			<form action={ templ.SafeURL("/auth/" + token) } method="post">
+				<button type="submit" class="primary wide">Sign in</button>
+			</form>
+		</section>
+	}
+}
+
+// ---- H1 Join from invite --------------------------------------------------------
+
+templ JoinPage(p domain.InvitePreview, token string, signedIn bool, name, email string) {
+	@Layout("You're invited", TabNone) {
+		<section class="join stack">
+			<h2 class="join-title">You're invited to { p.HouseholdName }</h2>
+			<p class="muted">
+				if p.InviterName != "" {
+					{ p.InviterName } wants to plan meals and share a shopping list with you.
+				} else {
+					Plan meals and share a shopping list.
+				}
+			</p>
+			if signedIn {
+				<form action={ templ.SafeURL("/invite/" + token + "/accept") } method="post">
+					<button type="submit" class="primary wide">Join { p.HouseholdName }</button>
+				</form>
+			} else {
+				<form class="stack" action={ templ.SafeURL("/join/" + token) } method="post">
+					<label>Your name <input name="name" required maxlength="100" autocomplete="given-name" placeholder="First name" value={ name }/></label>
+					<label>Email <input type="email" name="email" required autocomplete="email" placeholder="you@example.com" value={ email }/></label>
+					<button type="submit" class="primary wide">Email me a sign-in link</button>
+				</form>
+				<p class="muted small">No password. We'll send a link to sign in. After that, four quick questions and you'll see your first plan.</p>
+			}
+			<p class="muted small">Invite links work once and expire after 7 days.</p>
+		</section>
+	}
+}
+
+// ---- H2 Four questions -------------------------------------------------------------
+
+templ SetupPage(p domain.Profile) {
+	@Layout("Set up your household", TabNone) {
+		<p class="sub muted small">Four quick questions. Everything else can be changed later in Profile.</p>
+		<form class="setup stack" action="/setup" method="post">
+			<fieldset class="q">
+				<legend class="qt"><span class="qn">1 of 4</span> Which meals should we plan each week?</legend>
+				for _, t := range domain.PlannedMealTypes {
+					@stepper("meals_"+string(t), t.Label(), p.MealTargets[t], 0, domain.MaxMealsPerType)
+				}
+			</fieldset>
+			<fieldset class="q">
+				<legend class="qt"><span class="qn">2 of 4</span> How many people eat?</legend>
+				@stepper("people", "People", p.People, 1, 12)
+			</fieldset>
+			<fieldset class="q">
+				<legend class="qt"><span class="qn">3 of 4</span> Anything you never eat?</legend>
+				<label class="visually-hidden" for="setup-avoid">Foods to avoid, separated by commas</label>
+				<input id="setup-avoid" name="avoid" maxlength="1000" placeholder="E.g. onion, coriander" autocomplete="off"/>
+				<p class="muted small">Separate foods with commas. Claude never plans a meal with them.</p>
+			</fieldset>
+			<fieldset class="q">
+				<legend class="qt"><span class="qn">4 of 4</span> Which day do you usually shop?</legend>
+				<div class="days">
+					for _, d := range domain.Weekdays {
+						<label class="day">
+							<input type="radio" name="shopping_day" value={ string(d) } checked?={ d == p.ShoppingDay } required/>
+							<span>{ shortDay(d) }</span>
+						</label>
+					}
+				</div>
+				<p class="muted small">Your draft arrives the evening before, and confirms itself at 08:00 on shopping day.</p>
+			</fieldset>
+			<button type="submit" class="primary wide">Make our first plan</button>
+			<p class="muted small center">Set to defaults for now: store and section order, spice level, baby portions (off).</p>
+		</form>
+	}
+}
+
+// stepper is a number input with − and + buttons (app.js); without
+// JavaScript the number input works on its own.
+templ stepper(name, label string, value, lo, hi int) {
+	<div class="stepper">
+		<label for={ "st-" + name }>{ label }</label>
+		<div class="stepper-ctl">
+			<button type="button" class="sb" data-step="-1" data-for={ "st-" + name } aria-label={ "Fewer: " + label }>−</button>
+			<input id={ "st-" + name } type="number" inputmode="numeric" name={ name } min={ itoa(lo) } max={ itoa(hi) } value={ itoa(value) } required/>
+			<button type="button" class="sb" data-step="1" data-for={ "st-" + name } aria-label={ "More: " + label }>+</button>
+		</div>
+	</div>
+}
+
+// WaitingPage is /plans/next while the draft is being made (or failed):
+// the draft card, which updates over SSE.
+templ WaitingPage(c domain.DraftCard) {
+	@FullLayout("Next week", "/week", "Week") {
+		<div hx-ext="sse" sse-connect="/events">
+			@DraftCard(c)
+		</div>
+	}
+}
+
+// HouseholdMembers is the household part of Profile: members, invite (for
+// admins) and switching between households.
+templ HouseholdMembers(v householdView) {
+	<section class="card" id="household">
+		<h2>{ v.Name }</h2>
+		<ul class="members">
+			for _, m := range v.Members {
+				<li>
+					<span class="name">{ m.Name }</span>
+					<span class="muted small">{ m.Email }</span>
+					if m.Role == domain.RoleAdmin {
+						<span class="tag">admin</span>
+					}
+					if m.ID == v.Scope.MemberID {
+						<span class="tag">you</span>
+					}
+				</li>
+			}
+		</ul>
+		if v.Scope.IsHouseholdAdmin() {
+			<form class="row" action="/households/invites" method="post" hx-post="/households/invites" hx-target="#invite-result" hx-swap="innerHTML">
+				<label>
+					Invite as
+					<select name="role">
+						<option value="member" selected>Member</option>
+						<option value="admin">Admin</option>
+					</select>
+				</label>
+				<button type="submit">Create invite link</button>
+			</form>
+			<div id="invite-result"></div>
+		}
+	</section>
+	if len(v.Memberships) > 1 {
+		<section class="card">
+			<h2>Your households</h2>
+			<ul class="households">
+				for _, m := range v.Memberships {
+					<li>
+						<span class="name">{ m.HouseholdName }</span>
+						if m.HouseholdID == v.Scope.HouseholdID {
+							<span class="tag">current</span>
+						} else {
+							<form action={ templ.SafeURL("/households/" + m.HouseholdID.String() + "/switch") } method="post">
+								<button type="submit" class="secondary">Switch</button>
+							</form>
+						}
+					</li>
+				}
+			</ul>
+		</section>
+	}
+}

@@ -31,7 +31,12 @@ func (h *handlers) profilePage(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, http.StatusOK, ProfilePage(p, avoid, sections, pantry))
+	hv, err := h.householdView(r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, http.StatusOK, ProfilePage(p, avoid, sections, pantry, hv))
 }
 
 func (h *handlers) addAvoid(w http.ResponseWriter, r *http.Request) {

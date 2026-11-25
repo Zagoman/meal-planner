@@ -40,6 +40,8 @@ type Store struct {
 	sessions   map[string]session
 	apiTokens  map[string]session
 	invites    map[string]*invite
+	links      map[string]*loginLink // links.go
+	lastLink   map[string]string     // email -> newest link token
 }
 
 type member struct {
@@ -111,7 +113,7 @@ func (s *Store) AddHousehold(name string) uuid.UUID {
 			MealTargets: map[domain.MealType]int{domain.MealBreakfast: 0, domain.MealLunch: 0, domain.MealDinner: 5, domain.MealBaking: 0},
 			People:      2, SpiceLevel: domain.SpiceMild,
 			ProteinMix: map[domain.Protein]int{domain.ProteinChicken: 2, domain.ProteinFish: 1, domain.ProteinVegetarian: 2},
-			Avoid:      []string{}, ShoppingDay: domain.Saturday, AutoConfirmTime: "08:00", Language: "en",
+			Avoid:      []string{}, ShoppingDay: domain.Saturday, AutoConfirmTime: "08:00", Language: "en", SetupDone: true,
 		},
 		sections: slices.Clone(domain.DefaultSections),
 		meals:    map[uuid.UUID]domain.Meal{},

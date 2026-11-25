@@ -264,6 +264,7 @@ func profileFromDB(p db.Profile) (domain.Profile, error) {
 		ShoppingDay:     domain.Weekday(p.ShoppingDay),
 		AutoConfirmTime: clock,
 		TimeZone:        p.TimeZone,
+		SetupDone:       p.SetupDone,
 		BabyPortions:    p.BabyPortions,
 		Language:        p.Language,
 	}, nil
@@ -497,4 +498,35 @@ func (s *Service) PutPantry(ctx context.Context, sc domain.Scope, names []string
 		return nil, fmt.Errorf("put pantry: %w", err)
 	}
 	return out, nil
+}
+
+// Setup saves the four setup questions: meal counts, people, foods never
+// eaten (added to the avoid list with source "setup") and shopping day.
+// Everything else keeps its default. The household is then set up.
+func (s *Service) Setup(ctx context.Context, sc domain.Scope, in domain.SetupInput) (domain.Profile, error) {
+	p, err := s.Get(ctx, sc)
+	if err != nil {
+		return domain.Profile{}, err
+	}
+	p.MealTargets, p.People, p.ShoppingDay = in.MealTargets, in.People, in.ShoppingDay
+	p.Avoid = nil // added one by one below, with source "setup"
+	if _, err := cleanProfile(p); err != nil {
+		return domain.Profile{}, err
+	}
+	avoid, problems := cleanAvoid(in.Avoid)
+	if len(problems) > 0 {
+		return domain.Profile{}, &domain.ValidationError{Problems: problems}
+	}
+	if _, err := s.Put(ctx, sc, p); err != nil {
+		return domain.Profile{}, err
+	}
+	for _, name := range avoid {
+		if _, err := s.AddAvoid(ctx, sc, name, domain.AvoidFromSetup); err != nil {
+			return domain.Profile{}, err
+		}
+	}
+	if err := s.q.SetSetupDone(ctx, sc.HouseholdID); err != nil {
+		return domain.Profile{}, fmt.Errorf("setup: %w", err)
+	}
+	return s.Get(ctx, sc)
 }

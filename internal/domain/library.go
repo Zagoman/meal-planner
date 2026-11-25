@@ -128,3 +128,11 @@ type NotCookedMeal struct {
 func TitleKey(title string) string {
 	return strings.ToLower(strings.Join(strings.Fields(title), " "))
 }
+
+// SetupInput is the four setup questions of a new household.
+type SetupInput struct {
+	MealTargets map[MealType]int
+	People      int
+	Avoid       []string
+	ShoppingDay Weekday
+}

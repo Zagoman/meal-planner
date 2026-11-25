@@ -24,6 +24,7 @@ import (
 	"github.com/Zagoman/meal-planner/internal/events"
 	"github.com/Zagoman/meal-planner/internal/household"
 	"github.com/Zagoman/meal-planner/internal/jobs"
+	"github.com/Zagoman/meal-planner/internal/mail"
 	"github.com/Zagoman/meal-planner/internal/planner"
 	"github.com/Zagoman/meal-planner/internal/server"
 	"github.com/Zagoman/meal-planner/internal/service"
@@ -70,7 +71,15 @@ func run() error {
 	hub := events.NewHub()
 	services := service.NewUnimplemented()
 
-	authSvc := auth.New(pool, cfg.AdminEmail)
+	// Email: Resend when a key is set; otherwise sign-in links and draft
+	// emails are only logged (without the link).
+	var mailer mail.Mailer = mail.Log{}
+	if cfg.ResendAPIKey != "" {
+		mailer = mail.NewResend(cfg.ResendAPIKey, cfg.EmailFrom)
+	} else {
+		slog.Warn("RESEND_API_KEY is not set: emails are not sent")
+	}
+	authSvc := auth.New(pool, cfg.AdminEmail).WithMail(mailer, cfg.BaseURL)
 	householdSvc := household.New(pool, cfg.BaseURL, cfg.AdminEmail)
 	services.Auth = authSvc
 	services.Households = householdSvc
@@ -87,7 +96,9 @@ func run() error {
 	}
 	services.Lists = shopping.New(pool, hub)
 	worker := jobs.NewWorker(pool, jobs.Options{Timeout: cfg.GenerateTimeout + 30*time.Second})
-	plans := planner.New(pool, claudeClient, hub, planner.Options{Timeout: cfg.GenerateTimeout, Wake: worker.Wake})
+	plans := planner.New(pool, claudeClient, hub, planner.Options{
+		Timeout: cfg.GenerateTimeout, Wake: worker.Wake, Mailer: mailer, BaseURL: cfg.BaseURL,
+	})
 	plans.RegisterJobs(worker)
 	services.Plans = plans
 	services.Drafts = plans

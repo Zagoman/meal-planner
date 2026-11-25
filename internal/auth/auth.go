@@ -24,6 +24,7 @@ import (
 
 	"github.com/Zagoman/meal-planner/internal/db"
 	"github.com/Zagoman/meal-planner/internal/domain"
+	mailer "github.com/Zagoman/meal-planner/internal/mail"
 	"github.com/Zagoman/meal-planner/internal/service"
 )
 
@@ -45,6 +46,8 @@ type Service struct {
 	pool       *pgxpool.Pool
 	q          *db.Queries
 	adminEmail string
+	mail       mailer.Mailer // sign-in links (links.go); nil: not sent
+	baseURL    string
 }
 
 var _ service.Auth = (*Service)(nil)

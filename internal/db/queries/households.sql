@@ -101,3 +101,31 @@ SELECT * FROM api_tokens WHERE household_id = $1 AND member_id = $2 ORDER BY cre
 
 -- name: RevokeAPIToken :exec
 UPDATE api_tokens SET revoked_at = now() WHERE id = $1 AND household_id = $2 AND member_id = $3;
+
+-- name: CreateLoginToken :one
+INSERT INTO login_tokens (household_id, member_id, invite_id, token_hash, expires_at)
+VALUES ($1, $2, sqlc.narg(invite_id), $3, $4) RETURNING *;
+
+-- name: UseLoginToken :one
+-- Single use: only an unused, unexpired link matches, even under races.
+UPDATE login_tokens SET used_at = now()
+WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+RETURNING *;
+
+-- name: RecentLoginTokens :one
+-- Links sent to a member in the last minute (throttles "email me a link").
+SELECT count(*) FROM login_tokens WHERE member_id = $1 AND created_at > now() - interval '1 minute';
+
+-- name: GetInvite :one
+SELECT * FROM invites WHERE id = $1 AND household_id = $2;
+
+-- name: SetMemberName :exec
+UPDATE members SET name = $2 WHERE id = $1 AND name = '';
+
+-- name: LatestMembership :one
+-- The household a member signs in to by default: the one joined last.
+SELECT * FROM household_members WHERE member_id = $1 ORDER BY created_at DESC LIMIT 1;
+
+-- name: ListMemberEmails :many
+SELECT m.email, m.name FROM household_members hm JOIN members m ON m.id = hm.member_id
+WHERE hm.household_id = $1 ORDER BY hm.created_at;

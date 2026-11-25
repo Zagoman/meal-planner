@@ -6,8 +6,9 @@ var spiceLevels = []domain.SpiceLevel{domain.SpiceNone, domain.SpiceMild, domain
 
 var proteins = []domain.Protein{domain.ProteinChicken, domain.ProteinFish, domain.ProteinVegetarian, domain.ProteinOther}
 
-templ ProfilePage(p domain.Profile, avoid []domain.AvoidItem, sections []domain.Section, pantry []domain.PantryItem) {
+templ ProfilePage(p domain.Profile, avoid []domain.AvoidItem, sections []domain.Section, pantry []domain.PantryItem, hv householdView) {
 	@Layout("Profile", TabProfile) {
+		@HouseholdMembers(hv)
 		<section class="card">
 			<h2>Preferences</h2>
 			@PrefsForm(p, false)
@@ -26,7 +27,7 @@ templ ProfilePage(p domain.Profile, avoid []domain.AvoidItem, sections []domain.
 			<h2>Pantry</h2>
 			@PantryForm(pantry, false)
 		</section>
-		<p><a class="button" href="/household">Household, members and sign-in</a></p>
+		<p><a class="button secondary-btn" href="/household">Password, API tokens and sign out</a></p>
 	}
 }
 

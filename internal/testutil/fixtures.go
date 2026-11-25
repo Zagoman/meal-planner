@@ -11,8 +11,8 @@ import (
 	"github.com/Zagoman/meal-planner/internal/domain"
 )
 
-// NewHousehold creates a household with a default profile and sections and
-// one admin member, and returns that member's scope. Isolation tests create
+// NewHousehold creates a household with a default profile (set up) and
+// sections and one admin member, and returns that member's scope. Isolation tests create
 // two and check that one cannot see the other.
 func NewHousehold(t testing.TB, pool *pgxpool.Pool, name string) domain.Scope {
 	t.Helper()
@@ -35,6 +35,10 @@ func NewHousehold(t testing.TB, pool *pgxpool.Pool, name string) domain.Scope {
 		t.Fatal(err)
 	}
 	if err := q.CreateProfile(ctx, h.ID); err != nil {
+		t.Fatal(err)
+	}
+	// A test household has answered the setup questions.
+	if err := q.SetSetupDone(ctx, h.ID); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range domain.DefaultSections {

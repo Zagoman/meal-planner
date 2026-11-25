@@ -236,4 +236,55 @@ rated-1/not-cooked rules (see G-2 in GAPS.md).
 - Ratings are per household, not per member.
 - "Add recipe" (L2) is window 5; the library has no photos yet.
 
-## Next: window 4 – Households and email
+## Window 4 – Households and email (branch `window-4-households-email`)
+
+Defaults used: invite links last 7 days; email sign-in is added next to
+passwords (password sign-in is still there, behind "Sign in with a
+password").
+
+**Built**
+
+- Migration `00005_login_links_setup.sql`: `login_tokens` (single use, 15
+  minutes, hash only, optional `invite_id`) and `profiles.setup_done`
+  (existing households: done).
+- `internal/mail`: Resend over HTTPS (no tracking), a log-only mailer when
+  `RESEND_API_KEY` is empty (never logs the link), a recorder for tests.
+  Config: `RESEND_API_KEY`, `EMAIL_FROM` (default
+  "Meal Planner <meals@liluhome.dk>").
+- Auth: `RequestLoginLink` (same answer for every address, at most one link
+  a minute per member), `SignInWithLink`, `InvitePreview`, `Join` (creates
+  the member without a password; the membership is added when the emailed
+  link is used, and that uses up the invite).
+- Households: `Create` returns a one-time admin invite (`/join/{token}`);
+  `admin_email` is optional. Profiles: `Setup` saves the four questions
+  (never-eat foods go to the avoid list with source `setup`) and marks the
+  household set up.
+- Planner: "Next week's plan is ready" goes to every member for the weekly
+  draft and for a household's first plan (after setup): meal count,
+  confirm day and time, one link to `/plans/next`.
+- Web (wireframes H1, H2): login offers "Email me a sign-in link";
+  `/auth/request` always says "check your inbox"; `/auth/{token}` shows a
+  Sign in button (POST uses the link); `/join/{token}` (old `/invite/...`
+  links redirect); `/setup` with steppers and a day picker; members of a
+  household that isn't set up are sent to `/setup`; after setup the review
+  page shows "Making your plan…" until the first draft is ready;
+  `POST /households/invites`, `POST /households/{id}/switch`; Profile shows
+  the household's members, invite (admins) and switching.
+- Tests: sign-in links (single use, expiry, throttle, no account
+  disclosure, hash only), join (membership only on link use, invite used
+  once), create with invite; `internal/server/household_flow_test.go`
+  runs the "done when" over HTTP with the real services: a new household
+  joins from an invite, signs in by link, answers the four questions, gets
+  the draft email, confirms and ticks the whole list; then household A
+  calls **every web route with an id** (found by walking the router) with
+  each of B's ids and never gets a success with content, and receives no
+  SSE events.
+
+**Needs you before email works** (G-21): a Resend account with sending
+access for liluhome.dk, the SPF/DKIM/DMARC DNS records Resend gives you,
+`vault_mealplanner_resend_api_key` in the Ansible vault, and
+`deploy/homelab/window4-email.patch` applied to the homelab repo.
+
+**Known issues**: see G-21 to G-25 in GAPS.md.
+
+## Next: window 5 – Recipe import and cooking polish

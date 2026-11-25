@@ -161,7 +161,7 @@ func TestInviteFlow(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &inv); err != nil {
 		t.Fatal(err)
 	}
-	if inv.Role != domain.RoleMember || inv.URL != baseURL+"/invite/"+inv.Token || len(inv.Token) != 43 ||
+	if inv.Role != domain.RoleMember || inv.URL != baseURL+"/join/"+inv.Token || len(inv.Token) != 43 ||
 		inv.ExpiresAt.Before(time.Now().Add(6*24*time.Hour)) {
 		t.Fatalf("invite: %+v", inv)
 	}

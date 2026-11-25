@@ -214,11 +214,6 @@ func (h *handlers) addThis(w http.ResponseWriter, r *http.Request) {
 	}
 	n, err := h.svc.Library.AddToThisWeek(r.Context(), scope(r), id)
 	if err != nil {
-		if errors.Is(err, domain.ErrNotFound) {
-			if _, cerr := h.svc.Plans.Current(r.Context(), scope(r)); errors.Is(cerr, domain.ErrNotFound) {
-				err = fmt.Errorf("there is no plan this week to add to: %w", domain.ErrConflict)
-			}
-		}
 		h.fail(w, r, err)
 		return
 	}

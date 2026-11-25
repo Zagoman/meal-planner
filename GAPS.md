@@ -38,6 +38,11 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | G-18 | Migrations | Rolling back 00004 deletes the back-filled and tweaked recipes; rolling back 00003 deletes drafts. | Only on a rollback. | Restore from the dump taken before each deploy. | W2, W3 |
 | G-19 | Week start | Plans made before the review flow start on the Monday after they were made; drafts start on the shopping day. The two meet in `covers()` (fixed in `9b81fe9`). | None now; keep in mind when touching week logic. | Once no legacy plans are active, drop the special case. | W2 deploy |
 | G-20 | Library search | The search returns at most 200 recipes and filters ingredients with `ILIKE` on JSON. | Fine for a household library. | Pagination and an index if it grows. | W3 |
+| G-21 | Email | Emails go out only once a Resend API key is set and liluhome.dk has SPF, DKIM and DMARC records (your setup). Until then sign-in links and draft emails are only logged (without the link); password sign-in still works. | No sign-in by link, no draft email. | Resend account, DNS records, vault key, apply `deploy/homelab/window4-email.patch` (deploy/README.md, "Email"). | W4 |
+| G-22 | Sign-in | `/auth/request` and `/join/{token}` have no per-IP rate limit; only one link per member per minute is sent. | Someone could make the server send many links to many addresses it already knows (not more than one a minute each). | A small per-IP limiter on the two routes. | W4 |
+| G-23 | Accounts | Signing in by link does not sign out other sessions, and there is no list of active sessions or a "sign out everywhere". | A lost phone stays signed in up to 30 days (changing the password signs out the others). | A sessions list on the account page. | W4 |
+| G-24 | Join | The old invite route still lets a new person sign up with a password (`POST /invite/{token}/signup`); the join page itself only offers email links. | Two ways in; harmless. | Remove the password sign-up once nobody uses old links. | W4 |
+| G-25 | Setup | Only the household's first plan and the weekly draft send the "draft ready" email; a plan made with "make it now" doesn't. | Deliberate (the person is looking at the screen), but other members aren't told. | Email the other members only. | W4 |
 
 ## Deviations from the handoff (on purpose)
 
@@ -53,6 +58,12 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | No-JS delete | `DELETE /meals/{id}`, `/profile/avoid/{id}` | also `POST …/delete` | Forms can't send DELETE without JavaScript. |
 | `POST /api/plans` | (not covered) | still makes and confirms a plan in one go | Keeps the API contract. |
 | Weekly draft | made at 18:00 | skipped if that week already has a draft with Claude meals or a confirmed plan | A schedule must not overwrite a draft the household is reviewing. |
+| Sign-in link | `GET /auth/{token}` sets the session | `GET` shows a "Sign in" button; `POST /auth/{token}` uses the link | Mail scanners open links; a single-use link would be used up before the person taps it. |
+| Join | creates the member and joins | creates the member (no password); the membership is added when the emailed link is used | Typing someone else's email on an invite page can't add them to a household. |
+| Never-eat foods (setup) | chips, add with Enter | one text field, comma-separated | Works without JavaScript; they become avoid-list chips on Profile. |
+| Passwords | email links only | email links first; password sign-in kept behind "Sign in with a password" | Agreed at the start; email depends on the Resend setup (G-21). |
+| Invite links | `/join/{token}` | `/join/{token}`; old `/invite/{token}` links redirect there | Links already sent keep working. |
+| Create household | `POST /api/households` | `admin_email` optional; the response's `invite.url` is the one-time admin link | The first admin joins like everyone else. |
 
 ## Fixed
 
@@ -65,3 +76,5 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | — | Library filter chips widened the page at phone width and pushed the tab bar off-screen. | W3 (before commit) |
 | — | The Add item form stacked into three rows and covered the list at phone width. | W1 (before commit) |
 | — | Swap and remove icons drew wrong (joined SVG paths). | W2 (before commit) |
+| — | "Add to this week" with another household's recipe id answered 409 instead of 404 when the caller had no plan (found by the route walk in the window 4 isolation test). | W4 (before commit) |
+| — | The setup questions showed "1 of 4" under the question instead of above it. | W4 (before commit) |

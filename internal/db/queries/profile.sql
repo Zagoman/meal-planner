@@ -55,3 +55,6 @@ DELETE FROM avoid_items WHERE id = $1 AND household_id = $2;
 -- name: DeleteAvoidItemsNotIn :exec
 DELETE FROM avoid_items
 WHERE household_id = $1 AND NOT (normalized_name = ANY(sqlc.arg(keep)::text[]));
+
+-- name: SetSetupDone :exec
+UPDATE profiles SET setup_done = true, updated_at = now() WHERE household_id = $1;

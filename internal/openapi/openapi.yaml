@@ -206,7 +206,8 @@ paths:
 
   /households:
     post:
-      summary: Create a household (server admin only)
+      summary: Create a household and its one-time admin invite link (server admin only)
+      description: The response's `invite.url` (/join/{token}) is shown once; the first admin joins with it. A given `admin_email` is also added as admin directly.
       operationId: createHousehold
       requestBody:
         required: true
@@ -214,7 +215,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, admin_email]
+              required: [name]
               properties:
                 name: {type: string}
                 admin_email: {type: string, format: email}
@@ -450,6 +451,7 @@ components:
         id: {type: string, format: uuid}
         name: {type: string}
         created_at: {type: string, format: date-time}
+        invite: {$ref: '#/components/schemas/Invite'}
     Membership:
       type: object
       required: [household_id, household_name, role]
