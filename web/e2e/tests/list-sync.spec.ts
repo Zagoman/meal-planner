@@ -74,7 +74,19 @@ test("a tick on one phone shows up live on the other, also after being offline",
   await anna.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(item(ben, "potato")).toHaveClass(/checked/, { timeout: 15_000 });
   await expect(anna.locator("#offline-badge")).toBeHidden({ timeout: 10_000 });
-  expect(await anna.evaluate(() => localStorage.getItem("mp:tickQueue"))).toBeNull();
+  // The queue (IndexedDB) is empty once replayed.
+  const queued = await anna.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const req = indexedDB.open("mp", 1);
+        req.onsuccess = () => {
+          const count = req.result.transaction("ticks", "readonly").objectStore("ticks").count();
+          count.onsuccess = () => resolve(count.result);
+        };
+        req.onerror = () => resolve(-1);
+      }),
+  );
+  expect(queued).toBe(0);
 
   // Ben's service worker controls the page and keeps the last list for
   // offline use (network-first, one entry per path).

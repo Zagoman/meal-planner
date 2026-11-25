@@ -21,6 +21,7 @@ import (
 	"github.com/Zagoman/meal-planner/internal/db"
 	"github.com/Zagoman/meal-planner/internal/domain"
 	"github.com/Zagoman/meal-planner/internal/events"
+	"github.com/Zagoman/meal-planner/internal/fetch"
 	"github.com/Zagoman/meal-planner/internal/mail"
 	"github.com/Zagoman/meal-planner/internal/service"
 	"github.com/Zagoman/meal-planner/internal/shopping"
@@ -46,8 +47,10 @@ type Options struct {
 	// Wake, when set, is called after a job is queued (jobs.Worker.Wake).
 	Wake func()
 	// Mailer and BaseURL send the "draft ready" email; nil Mailer: none.
-	Mailer    mail.Mailer
-	BaseURL   string
+	Mailer  mail.Mailer
+	BaseURL string
+	// Fetch reads a recipe page for an import (default fetch.Fetcher).
+	Fetch     func(ctx context.Context, url string) (string, error)
 	MaxTokens int
 	Now       func() time.Time
 	Logger    *slog.Logger
@@ -77,6 +80,9 @@ func New(pool *pgxpool.Pool, client claude.Client, hub *events.Hub, opts Options
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
+	}
+	if opts.Fetch == nil {
+		opts.Fetch = fetch.Fetcher{}.Text
 	}
 	return &Service{pool: pool, client: client, events: hub, opts: opts}
 }

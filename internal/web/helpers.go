@@ -106,37 +106,6 @@ func mealCount(n int) string {
 	return itoa(n) + " meals"
 }
 
-// afterBaby reports whether an ingredient is only added after the baby
-// portion is taken out.
-func afterBaby(m domain.Meal, ing domain.Ingredient) bool {
-	for _, a := range m.AfterBabyPortion {
-		a = strings.ToLower(strings.TrimSpace(a))
-		if a == strings.ToLower(ing.Name) || a == strings.ToLower(ing.NormalizedName) {
-			return true
-		}
-	}
-	return false
-}
-
-// extraAfterBaby lists after-baby-portion items that are not ingredients
-// (usually salt).
-func extraAfterBaby(m domain.Meal) []string {
-	var out []string
-	for _, a := range m.AfterBabyPortion {
-		found := false
-		for _, ing := range m.Ingredients {
-			if strings.EqualFold(a, ing.Name) || strings.EqualFold(a, ing.NormalizedName) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
 func boolStr(b bool) string {
 	if b {
 		return "true"
@@ -213,4 +182,39 @@ func recipeLine(t domain.MealType, s domain.RecipeStats) string {
 // ratingText is "4" or "4.5".
 func ratingText(r float64) string {
 	return strconv.FormatFloat(math.Round(r*10)/10, 'f', -1, 64)
+}
+
+// inList reports whether an ingredient is added only after the baby
+// portion is taken out.
+func inList(after []string, ing domain.Ingredient) bool {
+	for _, a := range after {
+		a = strings.ToLower(strings.TrimSpace(a))
+		if a == strings.ToLower(ing.Name) || a == strings.ToLower(ing.NormalizedName) {
+			return true
+		}
+	}
+	return false
+}
+
+// avoidName is what goes on the avoid list for an ingredient: its
+// normalized name ("leek" for "leeks, sliced").
+func avoidName(ing domain.Ingredient) string {
+	if ing.NormalizedName != "" {
+		return ing.NormalizedName
+	}
+	return strings.ToLower(strings.TrimSpace(ing.Name))
+}
+
+// cookURL is step n of cook mode for a recipe or meal page ("/meals/{id}").
+func cookURL(recipe string, n int) string {
+	return fmt.Sprintf("%s/cook?step=%d", recipe, n)
+}
+
+// capitalize upper-cases the first letter: "leek" -> "Leek".
+func capitalize(s string) string {
+	r := []rune(s)
+	if len(r) == 0 {
+		return s
+	}
+	return strings.ToUpper(string(r[0])) + string(r[1:])
 }

@@ -53,6 +53,7 @@ func (s *Service) RegisterJobs(w *jobs.Worker) {
 	w.Handle(domain.JobAsk, s.failing(s.runAsk))
 	w.Handle(domain.JobAutoConfirm, s.failing(s.runAutoConfirm))
 	w.Handle(domain.JobTweak, s.failing(s.runTweak))
+	w.Handle(domain.JobImport, s.failing(s.runImport))
 }
 
 // failing publishes a job's failure so the pending element on every phone

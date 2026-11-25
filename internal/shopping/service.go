@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -140,6 +141,32 @@ func (s *Service) SetHaveIt(ctx context.Context, sc domain.Scope, itemID uuid.UU
 	})
 	if err != nil {
 		return domain.ListItem{}, notFound("check at home item", err)
+	}
+	item := ItemFromDB(row)
+	s.publish(sc.HouseholdID, events.Event{Kind: events.ItemChanged, ItemID: item.ID})
+	return item, nil
+}
+
+// TickAt applies an offline tick made at at, unless a later tick of the
+// item was applied already. at is clamped to the last 7 days and never
+// later than now, so a phone with a wrong clock cannot pin an item.
+func (s *Service) TickAt(ctx context.Context, sc domain.Scope, itemID uuid.UUID, checked bool, at time.Time) (domain.ListItem, error) {
+	now := time.Now()
+	if at.After(now) {
+		at = now
+	}
+	if at.Before(now.Add(-7 * 24 * time.Hour)) {
+		at = now.Add(-7 * 24 * time.Hour)
+	}
+	row, err := db.New(s.pool).SetListItemCheckedAt(ctx, db.SetListItemCheckedAtParams{
+		Checked:     checked,
+		CheckedBy:   uuid.NullUUID{UUID: sc.MemberID, Valid: sc.MemberID != uuid.Nil},
+		TickAt:      at,
+		ID:          itemID,
+		HouseholdID: sc.HouseholdID,
+	})
+	if err != nil {
+		return domain.ListItem{}, notFound("list item", err)
 	}
 	item := ItemFromDB(row)
 	s.publish(sc.HouseholdID, events.Event{Kind: events.ItemChanged, ItemID: item.ID})

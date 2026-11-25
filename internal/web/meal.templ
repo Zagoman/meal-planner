@@ -1,93 +1,172 @@
 package web
 
-import "github.com/Zagoman/meal-planner/internal/domain"
+import (
+	"net/url"
 
+	"github.com/Zagoman/meal-planner/internal/domain"
+)
+
+// MealPage is a recipe of this week (C1): pills, ingredients with "avoid
+// in future plans", steps with the baby-portion step marked, rating, and
+// Start cooking.
 templ MealPage(m domain.Meal) {
-	@Layout(m.Title, TabRecipe) {
-		<p class="meta">
-			{ mealMeta(m) } · { itoa(m.Servings) } servings
+	@SubLayout(m.Title, TabRecipe, "/week", "This week") {
+		<div class="pills">
+			<span class="pill">{ m.MealType.Label() }</span>
+			<span class="pill">{ itoa(m.Minutes) } min</span>
+			<span class="pill">Serves { itoa(m.Servings) }</span>
 			if m.OnePot {
-				· one pot
+				<span class="pill">One pot</span>
 			}
-		</p>
-		<p><button type="button" class="big" data-cook-open>👩‍🍳 Cook mode</button></p>
-		<section class="card">
-			<h2>Ingredients</h2>
-			<ul class="ingredients">
-				for _, ing := range m.Ingredients {
-					<li class={ templ.KV("after-baby", afterBaby(m, ing)) }>
-						<span class="qty">{ qty(ing.Qty, ing.Unit) }</span>
-						{ ing.Name }
-						if afterBaby(m, ing) {
-							<span class="tag baby">after baby portion</span>
-						}
-					</li>
-				}
-			</ul>
-			if extra := extraAfterBaby(m); len(extra) > 0 {
-				<p class="small">
-					<span class="tag baby">after baby portion</span>
-					for i, e := range extra {
-						if i > 0 {
-							,
-						}
-						{ e }
-					}
-				</p>
-			}
-		</section>
-		<section class="card">
-			<h2>Steps</h2>
-			<ol class="steps">
-				for _, st := range m.Steps {
-					<li class={ "step", templ.KV("baby", st.BabyPortion) }>
-						if st.BabyPortion {
-							<strong class="tag baby">👶 Baby portion</strong>
-						}
-						<span>{ st.Text }</span>
-						if st.TimerMin != nil {
-							@TimerButton(*st.TimerMin)
-						}
-					</li>
-				}
-			</ol>
-		</section>
+		</div>
+		@IngredientList(m.Ingredients, m.AfterBabyPortion, "/meals/"+m.ID.String())
+		@StepList(m.Steps)
 		<details class="card rate">
 			<summary>Rate this meal</summary>
 			@RateForm(m.ID)
 		</details>
-		@CookMode(m)
+		<div class="recipe-foot">
+			<a class="button primary wide" href={ templ.SafeURL("/meals/" + m.ID.String() + "/cook") }>Start cooking</a>
+		</div>
 	}
 }
 
-// CookMode is a full-screen, one-step-at-a-time view. app.js shows it,
-// moves between steps and holds a Screen Wake Lock while it is open.
-templ CookMode(m domain.Meal) {
-	<div id="cook" class="cook" hidden role="dialog" aria-modal="true" aria-label={ "Cook mode: " + m.Title }>
-		<div class="cook-bar">
-			<span data-cook-pos>1 / { itoa(len(m.Steps)) }</span>
-			<span class="muted small" data-wake-status></span>
-			<button type="button" class="secondary" data-cook-close>Close</button>
-		</div>
-		for i, st := range m.Steps {
-			<section class={ "cook-step", templ.KV("baby", st.BabyPortion) } data-step={ itoa(i) } hidden?={ i > 0 }>
-				<p class="cook-num">Step { itoa(i + 1) } of { itoa(len(m.Steps)) }</p>
-				if st.BabyPortion {
-					<p class="tag baby big">👶 Take out the baby's portion</p>
-				}
-				<p class="cook-text">{ st.Text }</p>
-				if st.TimerMin != nil {
-					@TimerButton(*st.TimerMin)
-				}
-			</section>
+// IngredientList is a recipe's ingredients, each with a button to keep it
+// out of future plans; back is where the no-JavaScript confirm page returns.
+templ IngredientList(ings []domain.Ingredient, after []string, back string) {
+	<h2 class="sec-label">Ingredients</h2>
+	<ul class="ingredients card ing-list">
+		for _, ing := range ings {
+			<li class={ "ing", templ.KV("after-baby", inList(after, ing)) }>
+				<span class="ing-name">
+					{ ing.Name }
+					if inList(after, ing) {
+						<span class="tag baby">after baby portion</span>
+					}
+				</span>
+				<span class="qty muted">{ qty(ing.Qty, ing.Unit) }</span>
+				<a
+					class="avoid-btn"
+					href={ templ.SafeURL("/avoid/confirm?ingredient=" + url.QueryEscape(avoidName(ing)) + "&back=" + url.QueryEscape(back)) }
+					hx-get={ "/avoid/confirm?ingredient=" + url.QueryEscape(avoidName(ing)) }
+					hx-target="next .avoid-sheet"
+					hx-swap="innerHTML"
+					aria-label={ "Avoid " + avoidName(ing) + " in future plans" }
+				>
+					@icon("M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20 M4.9 4.9l14.2 14.2")
+				</a>
+			</li>
+			<li class="avoid-sheet" aria-live="polite"></li>
 		}
-		<div class="cook-nav">
-			<button type="button" class="secondary" data-cook-prev>← Back</button>
-			<button type="button" data-cook-next>Next →</button>
-		</div>
+	</ul>
+}
+
+templ StepList(steps []domain.Step) {
+	<h2 class="sec-label">Steps</h2>
+	<ol class="steps-list">
+		for i, st := range steps {
+			if st.BabyPortion {
+				<li class="step baby"><b>Step { itoa(i + 1) } · Baby portion.</b> { st.Text }</li>
+			} else {
+				<li class="step"><span class="num" aria-hidden="true">{ itoa(i + 1) }</span><span>{ st.Text }</span></li>
+			}
+		}
+	</ol>
+}
+
+// AvoidSheet asks before putting an ingredient on the avoid list (C1).
+templ AvoidSheet(name string) {
+	<div class="sheet" role="dialog" aria-label={ "Avoid " + name }>
+		<p class="sheet-title">Leave { name } out of future plans?</p>
+		<p class="small">It goes on the household avoid list. Remove it any time in Profile.</p>
+		<form
+			class="sheet-actions"
+			action="/avoid"
+			method="post"
+			hx-post="/avoid"
+			hx-swap="none"
+			hx-on::after-request="if (event.detail.successful) this.closest('.avoid-sheet').innerHTML = ''"
+		>
+			<input type="hidden" name="name" value={ name }/>
+			<button type="button" class="secondary-btn" onclick="this.closest('.avoid-sheet').innerHTML = ''">Cancel</button>
+			<button type="submit" class="primary">Avoid { name }</button>
+		</form>
 	</div>
 }
 
-templ TimerButton(minutes int) {
-	<button type="button" class="timer" data-timer-min={ itoa(minutes) }>⏱ { itoa(minutes) } min timer</button>
+// AvoidConfirmPage is the sheet as a page, without JavaScript.
+templ AvoidConfirmPage(name, back string) {
+	@Layout("Avoid "+name, tabOther) {
+		<section class="card stack">
+			<p class="sheet-title">Leave { name } out of future plans?</p>
+			<p class="small">It goes on the household avoid list. Remove it any time in Profile.</p>
+			<form action="/avoid" method="post" class="sheet-actions">
+				<input type="hidden" name="name" value={ name }/>
+				<input type="hidden" name="back" value={ back }/>
+				<a class="button secondary-btn" href={ templ.SafeURL(back) }>Cancel</a>
+				<button type="submit" class="primary">Avoid { name }</button>
+			</form>
+		</section>
+	}
+}
+
+// AvoidToast says it worked, with Undo.
+templ AvoidToast(a domain.AvoidItem) {
+	<div class="flash ok toast">
+		<p>
+			{ capitalize(a.Name) } added to avoid list ·
+			<button type="button" class="link" hx-delete={ "/profile/avoid/" + a.ID.String() } hx-target="#flash" hx-swap="innerHTML" hx-vals='{"toast":"1"}'>Undo</button>
+		</p>
+	</div>
+}
+
+// CookPage is cook mode (C2): one step per page, swapped with htmx; the
+// screen is kept on (app.js) where the browser supports it.
+templ CookPage(title, back string, steps []domain.Step, after []string, n int) {
+	@FullLayout(title, back, "Recipe") {
+		@CookStep(title, back, steps, after, n)
+	}
+}
+
+templ CookStep(title, back string, steps []domain.Step, after []string, n int) {
+	{{ st := steps[n] }}
+	<div id="cook" class="cook-page" data-cook>
+		<div class="cook-head">
+			<span class="cook-title">Step { itoa(n + 1) } of { itoa(len(steps)) }</span>
+			<a href={ templ.SafeURL(back) } class="small">Ingredients</a>
+		</div>
+		<div class="cook-progress" aria-hidden="true">
+			for i := range steps {
+				<span class={ templ.KV("done", i <= n) }></span>
+			}
+		</div>
+		<div class="cook-body">
+			if st.BabyPortion {
+				<span class="baby-badge">Baby portion</span>
+			}
+			<p class="cook-text">{ st.Text }</p>
+			if st.BabyPortion && len(after) > 0 {
+				<p class="cook-after">{ joinNames(after) } come after this step.</p>
+			}
+			if st.TimerMin != nil {
+				<div class="cook-timer">
+					<span class="cook-clock" data-timer-display>{ itoa(*st.TimerMin) }:00</span>
+					<button type="button" class="primary" data-timer-min={ itoa(*st.TimerMin) }>Start timer</button>
+				</div>
+			}
+		</div>
+		<p class="small muted center" data-wake-status>Screen stays on while cooking</p>
+		<nav class="cook-nav">
+			if n > 0 {
+				<a class="button secondary-btn" href={ templ.SafeURL(cookURL(back, n-1)) } hx-get={ cookURL(back, n-1) } hx-target="#cook" hx-select="#cook" hx-swap="outerHTML" hx-push-url="true">Back</a>
+			} else {
+				<a class="button secondary-btn" href={ templ.SafeURL(back) }>Back</a>
+			}
+			if n < len(steps)-1 {
+				<a class="button primary" href={ templ.SafeURL(cookURL(back, n+1)) } hx-get={ cookURL(back, n+1) } hx-target="#cook" hx-select="#cook" hx-swap="outerHTML" hx-push-url="true">Next step</a>
+			} else {
+				<a class="button primary" href={ templ.SafeURL(back) }>Done</a>
+			}
+		</nav>
+	</div>
 }

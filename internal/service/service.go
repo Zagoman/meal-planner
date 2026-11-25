@@ -98,6 +98,16 @@ type Library interface {
 	// AddToThisWeek puts the recipe's ingredients that are not on the
 	// active list yet on it, unticked. It returns how many were added.
 	AddToThisWeek(ctx context.Context, s domain.Scope, recipeID uuid.UUID) (int, error)
+	// Import stores a photo, text or link as a draft and queues a job that
+	// reads it with Claude; the draft is then checked and saved.
+	Import(ctx context.Context, s domain.Scope, in domain.ImportInput) (domain.RecipeDraft, error)
+	ImportDraft(ctx context.Context, s domain.Scope, draftID uuid.UUID) (domain.RecipeDraft, error)
+	DiscardImport(ctx context.Context, s domain.Scope, draftID uuid.UUID) error
+	// SaveImport validates the checked recipe, saves it to the library and
+	// deletes the draft.
+	SaveImport(ctx context.Context, s domain.Scope, draftID uuid.UUID, r domain.MealJSON) (domain.Recipe, error)
+	// CreateRecipe saves a recipe written by hand.
+	CreateRecipe(ctx context.Context, s domain.Scope, r domain.MealJSON) (domain.Recipe, error)
 }
 
 // Lists is the shopping list of the active plan.
@@ -108,6 +118,10 @@ type Lists interface {
 	Rebuild(ctx context.Context, s domain.Scope, planID uuid.UUID) (domain.List, error)
 	AddItem(ctx context.Context, s domain.Scope, name, section string) (domain.ListItem, error)
 	SetChecked(ctx context.Context, s domain.Scope, itemID uuid.UUID, checked bool) (domain.ListItem, error)
+	// TickAt applies a tick made at a given time (an offline tick sent
+	// later) unless a later tick of the item was already applied: the last
+	// tick wins. It returns the item as it is now.
+	TickAt(ctx context.Context, s domain.Scope, itemID uuid.UUID, checked bool, at time.Time) (domain.ListItem, error)
 	// SetHaveIt answers a Check at home item: true is "Have it" (hidden
 	// from shopping), false is "Buy" (shown in its section), nil clears the
 	// answer. Items not under Check at home are domain.ErrNotFound.

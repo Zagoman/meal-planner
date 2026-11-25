@@ -270,3 +270,47 @@ func TestListCrossHousehold(t *testing.T) {
 		t.Errorf("A's list changed: %+v", got)
 	}
 }
+
+// Offline ticks arrive late: a tick applies only if no later tick of the
+// item was applied, so the last tick wins across phones.
+func TestTickAtLastTickWins(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	pool := testutil.NewDB(t)
+	svc := shopping.New(pool, nil)
+	a := testutil.NewHousehold(t, pool, "A")
+	b := testutil.NewHousehold(t, pool, "B")
+	planID, _ := activePlan(t, pool, a, domain.Ingredient{Name: "milk", Qty: 1, Unit: "l", Section: "dairy_eggs"})
+	list, err := svc.Rebuild(ctx, a, planID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	milk := byName(list)["Milk"]
+	now := time.Now()
+
+	// Phone 1 ticked offline at 10:00; phone 2 unticked online at 10:05.
+	if _, err := svc.TickAt(ctx, a, milk.ID, false, now.Add(-5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	it, err := svc.TickAt(ctx, a, milk.ID, true, now.Add(-10*time.Minute))
+	if err != nil || it.Checked {
+		t.Errorf("an older offline tick won: %+v %v", it, err)
+	}
+	// A newer one applies.
+	if it, _ = svc.TickAt(ctx, a, milk.ID, true, now.Add(-time.Minute)); !it.Checked {
+		t.Errorf("newer tick not applied: %+v", it)
+	}
+	// A tick "from the future" (wrong phone clock) counts as now, so an
+	// online untick right after still wins.
+	if _, err := svc.TickAt(ctx, a, milk.ID, true, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if it, _ = svc.SetChecked(ctx, a, milk.ID, false); it.Checked {
+		t.Errorf("online untick lost to a future tick: %+v", it)
+	}
+	// Another household: not found.
+	if _, err := svc.TickAt(ctx, b, milk.ID, true, now); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("other household: %v", err)
+	}
+}

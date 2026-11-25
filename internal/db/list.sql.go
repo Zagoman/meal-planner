@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -14,7 +15,7 @@ import (
 
 const addManualListItem = `-- name: AddManualListItem :one
 INSERT INTO list_items (household_id, plan_id, name, normalized_name, section, is_manual, added_by)
-VALUES ($1, $2, $3, $4, $5, true, $6) RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by
+VALUES ($1, $2, $3, $4, $5, true, $6) RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by, tick_at
 `
 
 type AddManualListItemParams struct {
@@ -54,13 +55,14 @@ func (q *Queries) AddManualListItem(ctx context.Context, arg AddManualListItemPa
 		&i.CheckHome,
 		&i.HaveIt,
 		&i.AddedBy,
+		&i.TickAt,
 	)
 	return i, err
 }
 
 const addRecipeListItem = `-- name: AddRecipeListItem :one
 INSERT INTO list_items (household_id, plan_id, name, normalized_name, qty_text, section, is_manual, added_by)
-VALUES ($1, $2, $3, $4, $5, $6, true, $7) RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by
+VALUES ($1, $2, $3, $4, $5, $6, true, $7) RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by, tick_at
 `
 
 type AddRecipeListItemParams struct {
@@ -103,6 +105,7 @@ func (q *Queries) AddRecipeListItem(ctx context.Context, arg AddRecipeListItemPa
 		&i.CheckHome,
 		&i.HaveIt,
 		&i.AddedBy,
+		&i.TickAt,
 	)
 	return i, err
 }
@@ -142,7 +145,7 @@ func (q *Queries) DeleteStaleGeneratedListItems(ctx context.Context, arg DeleteS
 }
 
 const getListItem = `-- name: GetListItem :one
-SELECT id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by FROM list_items WHERE id = $1 AND household_id = $2
+SELECT id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by, tick_at FROM list_items WHERE id = $1 AND household_id = $2
 `
 
 type GetListItemParams struct {
@@ -171,12 +174,13 @@ func (q *Queries) GetListItem(ctx context.Context, arg GetListItemParams) (ListI
 		&i.CheckHome,
 		&i.HaveIt,
 		&i.AddedBy,
+		&i.TickAt,
 	)
 	return i, err
 }
 
 const listItemsForPlan = `-- name: ListItemsForPlan :many
-SELECT id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by FROM list_items WHERE plan_id = $1 AND household_id = $2 ORDER BY created_at, name
+SELECT id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by, tick_at FROM list_items WHERE plan_id = $1 AND household_id = $2 ORDER BY created_at, name
 `
 
 type ListItemsForPlanParams struct {
@@ -211,6 +215,7 @@ func (q *Queries) ListItemsForPlan(ctx context.Context, arg ListItemsForPlanPara
 			&i.CheckHome,
 			&i.HaveIt,
 			&i.AddedBy,
+			&i.TickAt,
 		); err != nil {
 			return nil, err
 		}
@@ -227,9 +232,10 @@ UPDATE list_items SET
     checked = $1,
     checked_by = CASE WHEN $1::boolean THEN $2::uuid END,
     checked_at = CASE WHEN $1::boolean THEN now() END,
+    tick_at = now(),
     updated_at = now()
 WHERE id = $3 AND household_id = $4
-RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by
+RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by, tick_at
 `
 
 type SetListItemCheckedParams struct {
@@ -265,6 +271,63 @@ func (q *Queries) SetListItemChecked(ctx context.Context, arg SetListItemChecked
 		&i.CheckHome,
 		&i.HaveIt,
 		&i.AddedBy,
+		&i.TickAt,
+	)
+	return i, err
+}
+
+const setListItemCheckedAt = `-- name: SetListItemCheckedAt :one
+UPDATE list_items SET
+    checked = CASE WHEN tick_at IS NULL OR tick_at <= $1::timestamptz THEN $2::boolean ELSE checked END,
+    checked_by = CASE WHEN tick_at IS NULL OR tick_at <= $1::timestamptz
+        THEN (CASE WHEN $2::boolean THEN $3::uuid END) ELSE checked_by END,
+    checked_at = CASE WHEN tick_at IS NULL OR tick_at <= $1::timestamptz
+        THEN (CASE WHEN $2::boolean THEN $1::timestamptz END) ELSE checked_at END,
+    tick_at = greatest(coalesce(tick_at, $1::timestamptz), $1::timestamptz),
+    updated_at = now()
+WHERE id = $4 AND household_id = $5
+RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by, tick_at
+`
+
+type SetListItemCheckedAtParams struct {
+	TickAt      time.Time
+	Checked     bool
+	CheckedBy   uuid.NullUUID
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+// A tick made at tick_at (an offline tick sent later). It applies only if
+// no later tick of the item was applied: the last tick wins. The row is
+// returned either way.
+func (q *Queries) SetListItemCheckedAt(ctx context.Context, arg SetListItemCheckedAtParams) (ListItem, error) {
+	row := q.db.QueryRow(ctx, setListItemCheckedAt,
+		arg.TickAt,
+		arg.Checked,
+		arg.CheckedBy,
+		arg.ID,
+		arg.HouseholdID,
+	)
+	var i ListItem
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.PlanID,
+		&i.Name,
+		&i.NormalizedName,
+		&i.QtyText,
+		&i.NeedText,
+		&i.Section,
+		&i.Checked,
+		&i.CheckedBy,
+		&i.CheckedAt,
+		&i.IsManual,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CheckHome,
+		&i.HaveIt,
+		&i.AddedBy,
+		&i.TickAt,
 	)
 	return i, err
 }
@@ -272,7 +335,7 @@ func (q *Queries) SetListItemChecked(ctx context.Context, arg SetListItemChecked
 const setListItemHaveIt = `-- name: SetListItemHaveIt :one
 UPDATE list_items SET have_it = $1, updated_at = now()
 WHERE id = $2 AND household_id = $3 AND check_home
-RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by
+RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by, tick_at
 `
 
 type SetListItemHaveItParams struct {
@@ -303,6 +366,7 @@ func (q *Queries) SetListItemHaveIt(ctx context.Context, arg SetListItemHaveItPa
 		&i.CheckHome,
 		&i.HaveIt,
 		&i.AddedBy,
+		&i.TickAt,
 	)
 	return i, err
 }
@@ -318,7 +382,7 @@ ON CONFLICT (plan_id, normalized_name) WHERE NOT is_manual DO UPDATE SET
     check_home = EXCLUDED.check_home,
     have_it = CASE WHEN EXCLUDED.check_home THEN list_items.have_it END,
     updated_at = now()
-RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by
+RETURNING id, household_id, plan_id, name, normalized_name, qty_text, need_text, section, checked, checked_by, checked_at, is_manual, created_at, updated_at, check_home, have_it, added_by, tick_at
 `
 
 type UpsertGeneratedListItemParams struct {
@@ -364,6 +428,7 @@ func (q *Queries) UpsertGeneratedListItem(ctx context.Context, arg UpsertGenerat
 		&i.CheckHome,
 		&i.HaveIt,
 		&i.AddedBy,
+		&i.TickAt,
 	)
 	return i, err
 }

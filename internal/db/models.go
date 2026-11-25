@@ -106,6 +106,7 @@ type ListItem struct {
 	CheckHome      bool
 	HaveIt         pgtype.Bool
 	AddedBy        uuid.NullUUID
+	TickAt         *time.Time
 }
 
 type LoginToken struct {
@@ -218,6 +219,19 @@ type Recipe struct {
 	ParentRecipeID uuid.NullUUID
 	MealType       string
 	TitleKey       string
+}
+
+type RecipeDraft struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+	Source      string
+	RawInput    string
+	Photo       []byte
+	PhotoType   string
+	Parsed      []byte
+	Uncertain   []string
+	CreatedBy   uuid.NullUUID
+	CreatedAt   time.Time
 }
 
 type Session struct {

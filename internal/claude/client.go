@@ -16,6 +16,15 @@ import (
 type Message struct {
 	Role    string
 	Content string
+	// Images go before the text (user messages only), e.g. a photo of a
+	// cookbook page.
+	Images []Image
+}
+
+// Image is a JPEG, PNG, GIF or WebP image sent with a message.
+type Image struct {
+	MediaType string // "image/jpeg"
+	Data      []byte
 }
 
 // Request asks for one JSON document matching Schema.

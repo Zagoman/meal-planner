@@ -169,6 +169,10 @@ func (f *fakePlanner) SetHaveIt(context.Context, domain.Scope, uuid.UUID, *bool)
 	return domain.ListItem{}, domain.ErrNotImplemented
 }
 
+func (f *fakePlanner) TickAt(ctx context.Context, s domain.Scope, itemID uuid.UUID, checked bool, _ time.Time) (domain.ListItem, error) {
+	return f.SetChecked(ctx, s, itemID, checked)
+}
+
 func (f *fakePlanner) SetChecked(_ context.Context, s domain.Scope, itemID uuid.UUID, checked bool) (domain.ListItem, error) {
 	f.mu.Lock()
 	f.record("SetChecked", s)

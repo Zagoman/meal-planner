@@ -12,6 +12,25 @@ import (
 //go:embed meal_plan.schema.json
 var mealPlanSchema []byte
 
+// recipeImportSchema is what Claude returns when it reads a recipe from a
+// photo, text or web page.
+//
+//go:embed recipe_import.schema.json
+var recipeImportSchema []byte
+
+// RecipeImportSchema returns a copy of the recipe import JSON schema.
+func RecipeImportSchema() json.RawMessage {
+	out := make([]byte, len(recipeImportSchema))
+	copy(out, recipeImportSchema)
+	return out
+}
+
+// RecipeImportJSON is the decoded form of an import answer.
+type RecipeImportJSON struct {
+	Recipe    MealJSON `json:"recipe"`
+	Uncertain []string `json:"uncertain"`
+}
+
 // MealPlanSchema returns a copy of the meal plan JSON schema.
 func MealPlanSchema() json.RawMessage {
 	out := make([]byte, len(mealPlanSchema))

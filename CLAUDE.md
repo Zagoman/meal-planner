@@ -112,6 +112,9 @@ new files (`00003_...sql`), never edits to an applied one.
   recorder in tests). Never log a sign-in link or put tracking in an email.
   Sign-in links (`login_tokens`) and invites are single use; a join adds the
   membership only when the emailed link is used.
+- Server-side fetches of user-given URLs go through `internal/fetch` only
+  (public addresses, size and time limits). Uploaded photos go through
+  `internal/imagefit` and are not stored once read.
 - SSE: `GET /events` sends per-partial events (`list.item`, `meal.updated`,
   `meal-<id>`, `plan.updated`, `job.failed`); pages refetch the partial
   with `hx-trigger="sse:<name>"`. Every partial has a stable id.

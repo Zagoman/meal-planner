@@ -136,3 +136,36 @@ type SetupInput struct {
 	Avoid       []string
 	ShoppingDay Weekday
 }
+
+// ImportSource is where an imported recipe came from.
+type ImportSource string
+
+const (
+	ImportPhoto ImportSource = "photo"
+	ImportText  ImportSource = "text"
+	ImportLink  ImportSource = "link"
+)
+
+// ImportInput is a recipe to import: a photo, pasted text or a link.
+type ImportInput struct {
+	Source    ImportSource
+	Text      string // pasted text, or the link
+	Photo     []byte // already resized
+	PhotoType string // "image/jpeg"
+}
+
+// RecipeDraft is an imported recipe waiting to be checked.
+type RecipeDraft struct {
+	ID        uuid.UUID    `json:"id"`
+	Source    ImportSource `json:"source"`
+	RawInput  string       `json:"raw_input"`
+	Recipe    *MealJSON    `json:"recipe,omitempty"` // nil until read
+	Uncertain []string     `json:"uncertain"`
+	// Job is the import job: queued or running while Claude reads it.
+	Job *Job `json:"job,omitempty"`
+}
+
+// Reading reports whether Claude is still reading the recipe.
+func (d RecipeDraft) Reading() bool {
+	return d.Recipe == nil && (d.Job == nil || d.Job.Status.Pending())
+}

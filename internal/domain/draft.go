@@ -15,6 +15,7 @@ const (
 	JobAsk         JobKind = "ask"          // Ask Claude: change the whole draft
 	JobAutoConfirm JobKind = "auto_confirm" // swap thumbs-down meals, then confirm
 	JobTweak       JobKind = "tweak"        // a new version of a library recipe
+	JobImport      JobKind = "import"       // read a recipe from a photo, text or link
 )
 
 type JobStatus string

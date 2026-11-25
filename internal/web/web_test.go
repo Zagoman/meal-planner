@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -141,8 +142,10 @@ func TestPagesRender(t *testing.T) {
 		{"/week", anna, []string{meal.Title, `id="week-meals"`, `id="meal-` + meal.ID.String() + `"`,
 			"Dinner · ", "cook them in any order", `id="draft-card"`}},
 		{"/recipes", anna, []string{"Recipes", `aria-current="page"`}},
-		{"/meals/" + meal.ID.String(), anna, []string{meal.Title, "Baby portion", "after baby portion",
-			`data-timer-min="8"`, "data-cook-open", `id="cook"`}},
+		{"/meals/" + meal.ID.String(), anna, []string{meal.Title, "Baby portion", "after baby portion", "‹ This week",
+			`hx-get="/avoid/confirm?ingredient=`, `href="/meals/` + meal.ID.String() + `/cook"`, "Start cooking"}},
+		{"/meals/" + meal.ID.String() + "/cook", anna, []string{`id="cook"`, "data-cook", "Step 1 of", "data-wake-status",
+			`href="/meals/` + meal.ID.String() + `/cook?step=1"`}},
 		{"/profile", anna, []string{"Shop sections", "Move Bakery up", `name="meals_dinner"`, `name="people"`,
 			`name="auto_confirm_time"`, `id="avoid-list"`, `href="/household"`, "rice"}},
 		{"/household", anna, []string{"Home", "Ben", "Invite someone", "Switch", "API tokens", `action="/logout"`}},
@@ -1065,3 +1068,97 @@ func TestCheckAtHome(t *testing.T) {
 	}
 	mustContain(t, "toggle", rec.Body.String(), `hx-post="/list/items/`+item.ID.String()+`/toggle"`)
 }
+
+func TestImportAvoidAndCook(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	anna, carl := f.session(f.seed.Anna), f.session(f.seed.Carl)
+	ctx := context.Background()
+
+	// L2, then a pasted recipe: the fake reads it at once.
+	rec := f.do(t, req{path: "/recipes/add", session: anna})
+	mustContain(t, "add", rec.Body.String(), "Take a photo", "Paste text or a link", `href="/recipes/new"`, `enctype="multipart/form-data"`)
+	rec = f.do(t, req{method: "POST", path: "/recipes/import", form: url.Values{"text": {"Pancakes\n- flour\n- milk\nWhisk and fry."}}, session: anna})
+	if rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/recipes/drafts/") {
+		t.Fatalf("import: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	draftPath := rec.Header().Get("Location")
+
+	// L3: the check form, the unsure field in orange.
+	rec = f.do(t, req{path: draftPath, session: anna})
+	body := rec.Body.String()
+	mustContain(t, "check", body, "Check the recipe", `value="Pancakes"`, "1 thing to check", `name="minutes" type="number" inputmode="numeric" min="1" required value="30" class="flag"`, "Save to library", "Discard")
+	// Another household: 404.
+	if rec = f.do(t, req{path: draftPath, session: carl}); rec.Code != http.StatusNotFound {
+		t.Errorf("other household sees the draft: %d", rec.Code)
+	}
+	if rec = f.do(t, req{method: "POST", path: draftPath + "/save", form: url.Values{"title": {"x"}}, session: carl}); rec.Code != http.StatusNotFound {
+		t.Errorf("other household saves the draft: %d", rec.Code)
+	}
+	// Save with a problem: the form again, with the problems.
+	form := url.Values{"title": {"Pancakes"}, "meal_type": {"breakfast"}, "minutes": {"0"}, "servings": {"4"}, "protein": {"other"},
+		"ing_name": {"flour", "milk", ""}, "ing_qty": {"200", "3", ""}, "ing_unit": {"g", "dl", ""}, "ing_section": {"dry_goods", "dairy_eggs", "other"},
+		"step_text": {"Whisk and fry.", ""}, "step_timer": {"", ""}}
+	rec = f.do(t, req{method: "POST", path: draftPath + "/save", form: form, session: anna})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid save: %d", rec.Code)
+	}
+	mustContain(t, "invalid save", rec.Body.String(), "minutes", `value="flour"`)
+	form.Set("minutes", "20")
+	rec = f.do(t, req{method: "POST", path: draftPath + "/save", form: form, session: anna})
+	if rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/recipes/") {
+		t.Fatalf("save: %d %q %s", rec.Code, rec.Header().Get("Location"), rec.Body)
+	}
+	recipePath := rec.Header().Get("Location")
+	mustContain(t, "saved recipe", f.do(t, req{path: recipePath, session: anna}).Body.String(), "Pancakes", "Our own", "Start cooking")
+	if rec = f.do(t, req{path: draftPath, session: anna}); rec.Code != http.StatusNotFound {
+		t.Errorf("draft kept after save: %d", rec.Code)
+	}
+
+	// A link that can't be opened: the form asks for the text.
+	rec = f.do(t, req{method: "POST", path: "/recipes/import", form: url.Values{"text": {"https://example.com/fail"}}, session: anna})
+	mustContain(t, "failed link", f.do(t, req{path: rec.Header().Get("Location"), session: anna}).Body.String(), "Couldn't open that page. Paste the recipe text instead.")
+
+	// Written by hand.
+	mustContain(t, "new", f.do(t, req{path: "/recipes/new", session: anna}).Body.String(), "Write a recipe", `name="ing_name"`, `data-add-row="ing-rows"`)
+	form.Set("title", "Crêpes")
+	rec = f.do(t, req{method: "POST", path: "/recipes", form: form, session: anna})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+
+	// C1: avoid an ingredient: sheet, add, toast with Undo, undo.
+	meal := f.seed.HomePlan.Meals[0]
+	ingName := strings.ToLower(meal.Ingredients[0].NormalizedName)
+	rec = f.do(t, req{path: "/avoid/confirm?ingredient=" + url.QueryEscape(ingName), session: anna, hx: true})
+	mustContain(t, "sheet", rec.Body.String(), "Leave "+ingName+" out of future plans?", "Avoid "+ingName)
+	mustContain(t, "confirm page", f.do(t, req{path: "/avoid/confirm?ingredient=leek&back=/meals/x", session: anna}).Body.String(), `action="/avoid"`, `value="/meals/x"`)
+	rec = f.do(t, req{method: "POST", path: "/avoid", form: url.Values{"name": {ingName}}, session: anna, hx: true})
+	mustContain(t, "toast", rec.Body.String(), strings.ToUpper(ingName[:1])+ingName[1:]+" added to avoid list", "Undo")
+	items, _ := f.store.AvoidItems(ctx, f.seed.Anna)
+	if len(items) != 1 || items[0].Source != domain.AvoidFromRecipe {
+		t.Fatalf("avoid list: %+v", items)
+	}
+	if rec = f.do(t, req{method: "DELETE", path: "/profile/avoid/" + items[0].ID.String() + "?toast=1", session: anna, hx: true}); !strings.Contains(rec.Body.String(), "Removed from the avoid list") {
+		t.Errorf("undo: %d %s", rec.Code, rec.Body)
+	}
+	if items, _ = f.store.AvoidItems(ctx, f.seed.Anna); len(items) != 0 {
+		t.Errorf("undo did not remove it: %+v", items)
+	}
+
+	// C2: cook mode, step by step; out-of-range steps are clamped.
+	mealPath := "/meals/" + meal.ID.String()
+	last := len(meal.Steps) - 1
+	rec = f.do(t, req{path: mealPath + "/cook?step=99", session: anna})
+	mustContain(t, "last step", rec.Body.String(), "Step "+itoa(last+1)+" of "+itoa(last+1), ">Done<")
+	rec = f.do(t, req{path: mealPath + "/cook?step=0", session: anna})
+	mustContain(t, "first step", rec.Body.String(), "Step 1 of", `hx-get="`+mealPath+`/cook?step=1"`, `hx-select="#cook"`)
+	for _, p := range []string{mealPath + "/cook", recipePath + "/cook"} {
+		if rec = f.do(t, req{path: p, session: carl}); rec.Code != http.StatusNotFound {
+			t.Errorf("other household cooks %s: %d", p, rec.Code)
+		}
+	}
+	mustContain(t, "recipe cook", f.do(t, req{path: recipePath + "/cook", session: anna}).Body.String(), "Pancakes", "Step 1 of 1")
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }

@@ -42,6 +42,7 @@ type Querier interface {
 	CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error)
 	CreateProfile(ctx context.Context, householdID uuid.UUID) error
 	CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Recipe, error)
+	CreateRecipeDraft(ctx context.Context, arg CreateRecipeDraftParams) (RecipeDraft, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateStep(ctx context.Context, arg CreateStepParams) error
 	DeleteAvoidItem(ctx context.Context, arg DeleteAvoidItemParams) (int64, error)
@@ -59,6 +60,7 @@ type Querier interface {
 	DeleteOutcome(ctx context.Context, arg DeleteOutcomeParams) error
 	DeletePantryItems(ctx context.Context, householdID uuid.UUID) error
 	DeleteRecipe(ctx context.Context, arg DeleteRecipeParams) error
+	DeleteRecipeDraft(ctx context.Context, arg DeleteRecipeDraftParams) (int64, error)
 	DeleteSections(ctx context.Context, householdID uuid.UUID) error
 	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteStaleGeneratedListItems(ctx context.Context, arg DeleteStaleGeneratedListItemsParams) error
@@ -85,6 +87,7 @@ type Querier interface {
 	GetPlan(ctx context.Context, arg GetPlanParams) (Plan, error)
 	GetProfile(ctx context.Context, householdID uuid.UUID) (Profile, error)
 	GetRecipe(ctx context.Context, arg GetRecipeParams) (Recipe, error)
+	GetRecipeDraft(ctx context.Context, arg GetRecipeDraftParams) (RecipeDraft, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (Session, error)
 	// Adding a name that is already on the list returns nothing (pgx.ErrNoRows).
 	InsertAvoidItem(ctx context.Context, arg InsertAvoidItemParams) (AvoidItem, error)
@@ -94,6 +97,7 @@ type Querier interface {
 	InsertPantryItem(ctx context.Context, arg InsertPantryItemParams) error
 	InsertSection(ctx context.Context, arg InsertSectionParams) error
 	InsertUsage(ctx context.Context, arg InsertUsageParams) error
+	LatestDraftJob(ctx context.Context, arg LatestDraftJobParams) (Job, error)
 	LatestJob(ctx context.Context, arg LatestJobParams) (Job, error)
 	LatestMealJob(ctx context.Context, arg LatestMealJobParams) (Job, error)
 	// The household a member signs in to by default: the one joined last.
@@ -142,11 +146,17 @@ type Querier interface {
 	// The library with ratings: q matches the title or an ingredient.
 	SearchRecipes(ctx context.Context, arg SearchRecipesParams) ([]SearchRecipesRow, error)
 	SetListItemChecked(ctx context.Context, arg SetListItemCheckedParams) (ListItem, error)
+	// A tick made at tick_at (an offline tick sent later). It applies only if
+	// no later tick of the item was applied: the last tick wins. The row is
+	// returned either way.
+	SetListItemCheckedAt(ctx context.Context, arg SetListItemCheckedAtParams) (ListItem, error)
 	// Only Check at home items can be answered; NULL clears the answer.
 	SetListItemHaveIt(ctx context.Context, arg SetListItemHaveItParams) (ListItem, error)
 	SetMealPosition(ctx context.Context, arg SetMealPositionParams) error
 	SetMealRecipe(ctx context.Context, arg SetMealRecipeParams) error
 	SetMemberName(ctx context.Context, arg SetMemberNameParams) error
+	// The photo is dropped as soon as it has been read.
+	SetRecipeDraftParsed(ctx context.Context, arg SetRecipeDraftParsedParams) error
 	SetServerAdmin(ctx context.Context, arg SetServerAdminParams) error
 	SetSetupDone(ctx context.Context, householdID uuid.UUID) error
 	SwitchSessionHousehold(ctx context.Context, arg SwitchSessionHouseholdParams) error

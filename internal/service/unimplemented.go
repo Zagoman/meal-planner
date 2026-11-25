@@ -194,3 +194,19 @@ func (Unimplemented) Join(context.Context, string, string, string) error { retur
 func (Unimplemented) Setup(context.Context, domain.Scope, domain.SetupInput) (domain.Profile, error) {
 	return domain.Profile{}, errNI
 }
+func (Unimplemented) Import(context.Context, domain.Scope, domain.ImportInput) (domain.RecipeDraft, error) {
+	return domain.RecipeDraft{}, errNI
+}
+func (Unimplemented) ImportDraft(context.Context, domain.Scope, uuid.UUID) (domain.RecipeDraft, error) {
+	return domain.RecipeDraft{}, errNI
+}
+func (Unimplemented) DiscardImport(context.Context, domain.Scope, uuid.UUID) error { return errNI }
+func (Unimplemented) SaveImport(context.Context, domain.Scope, uuid.UUID, domain.MealJSON) (domain.Recipe, error) {
+	return domain.Recipe{}, errNI
+}
+func (Unimplemented) CreateRecipe(context.Context, domain.Scope, domain.MealJSON) (domain.Recipe, error) {
+	return domain.Recipe{}, errNI
+}
+func (Unimplemented) TickAt(context.Context, domain.Scope, uuid.UUID, bool, time.Time) (domain.ListItem, error) {
+	return domain.ListItem{}, errNI
+}

@@ -57,6 +57,10 @@ func (h *handlers) deleteAvoid(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	if r.FormValue("toast") == "1" { // Undo in the "added to avoid list" toast
+		h.render(w, r, http.StatusOK, Notice("Removed from the avoid list."))
+		return
+	}
 	h.renderAvoid(w, r)
 }
 

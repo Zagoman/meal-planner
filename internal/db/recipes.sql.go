@@ -105,6 +105,45 @@ func (q *Queries) CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Rec
 	return i, err
 }
 
+const createRecipeDraft = `-- name: CreateRecipeDraft :one
+INSERT INTO recipe_drafts (household_id, source, raw_input, photo, photo_type, created_by)
+VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, household_id, source, raw_input, photo, photo_type, parsed, uncertain, created_by, created_at
+`
+
+type CreateRecipeDraftParams struct {
+	HouseholdID uuid.UUID
+	Source      string
+	RawInput    string
+	Photo       []byte
+	PhotoType   string
+	CreatedBy   uuid.NullUUID
+}
+
+func (q *Queries) CreateRecipeDraft(ctx context.Context, arg CreateRecipeDraftParams) (RecipeDraft, error) {
+	row := q.db.QueryRow(ctx, createRecipeDraft,
+		arg.HouseholdID,
+		arg.Source,
+		arg.RawInput,
+		arg.Photo,
+		arg.PhotoType,
+		arg.CreatedBy,
+	)
+	var i RecipeDraft
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.Source,
+		&i.RawInput,
+		&i.Photo,
+		&i.PhotoType,
+		&i.Parsed,
+		&i.Uncertain,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const deleteOutcome = `-- name: DeleteOutcome :exec
 DELETE FROM meal_outcomes WHERE meal_id = $1 AND household_id = $2
 `
@@ -131,6 +170,23 @@ type DeleteRecipeParams struct {
 func (q *Queries) DeleteRecipe(ctx context.Context, arg DeleteRecipeParams) error {
 	_, err := q.db.Exec(ctx, deleteRecipe, arg.ID, arg.HouseholdID)
 	return err
+}
+
+const deleteRecipeDraft = `-- name: DeleteRecipeDraft :execrows
+DELETE FROM recipe_drafts WHERE id = $1 AND household_id = $2
+`
+
+type DeleteRecipeDraftParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) DeleteRecipeDraft(ctx context.Context, arg DeleteRecipeDraftParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRecipeDraft, arg.ID, arg.HouseholdID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getOutcome = `-- name: GetOutcome :one
@@ -189,6 +245,33 @@ func (q *Queries) GetRecipe(ctx context.Context, arg GetRecipeParams) (Recipe, e
 	return i, err
 }
 
+const getRecipeDraft = `-- name: GetRecipeDraft :one
+SELECT id, household_id, source, raw_input, photo, photo_type, parsed, uncertain, created_by, created_at FROM recipe_drafts WHERE id = $1 AND household_id = $2
+`
+
+type GetRecipeDraftParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) GetRecipeDraft(ctx context.Context, arg GetRecipeDraftParams) (RecipeDraft, error) {
+	row := q.db.QueryRow(ctx, getRecipeDraft, arg.ID, arg.HouseholdID)
+	var i RecipeDraft
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.Source,
+		&i.RawInput,
+		&i.Photo,
+		&i.PhotoType,
+		&i.Parsed,
+		&i.Uncertain,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertUsage = `-- name: InsertUsage :exec
 INSERT INTO usage_log (household_id, member_id, kind, model, input_tokens, output_tokens)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -213,6 +296,40 @@ func (q *Queries) InsertUsage(ctx context.Context, arg InsertUsageParams) error 
 		arg.OutputTokens,
 	)
 	return err
+}
+
+const latestDraftJob = `-- name: LatestDraftJob :one
+SELECT id, household_id, kind, status, dedupe_key, plan_id, meal_id, member_id, payload, result, error, attempts, run_after, created_at, started_at, finished_at FROM jobs WHERE household_id = $1 AND kind = 'import' AND payload ->> 'draft_id' = $2::text
+ORDER BY created_at DESC LIMIT 1
+`
+
+type LatestDraftJobParams struct {
+	HouseholdID uuid.UUID
+	DraftID     string
+}
+
+func (q *Queries) LatestDraftJob(ctx context.Context, arg LatestDraftJobParams) (Job, error) {
+	row := q.db.QueryRow(ctx, latestDraftJob, arg.HouseholdID, arg.DraftID)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.Kind,
+		&i.Status,
+		&i.DedupeKey,
+		&i.PlanID,
+		&i.MealID,
+		&i.MemberID,
+		&i.Payload,
+		&i.Result,
+		&i.Error,
+		&i.Attempts,
+		&i.RunAfter,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
 }
 
 const latestRecipeJob = `-- name: LatestRecipeJob :one
@@ -552,6 +669,28 @@ type SetMealRecipeParams struct {
 
 func (q *Queries) SetMealRecipe(ctx context.Context, arg SetMealRecipeParams) error {
 	_, err := q.db.Exec(ctx, setMealRecipe, arg.ID, arg.HouseholdID, arg.RecipeID)
+	return err
+}
+
+const setRecipeDraftParsed = `-- name: SetRecipeDraftParsed :exec
+UPDATE recipe_drafts SET parsed = $3, uncertain = $4, photo = NULL WHERE id = $1 AND household_id = $2
+`
+
+type SetRecipeDraftParsedParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+	Parsed      []byte
+	Uncertain   []string
+}
+
+// The photo is dropped as soon as it has been read.
+func (q *Queries) SetRecipeDraftParsed(ctx context.Context, arg SetRecipeDraftParsedParams) error {
+	_, err := q.db.Exec(ctx, setRecipeDraftParsed,
+		arg.ID,
+		arg.HouseholdID,
+		arg.Parsed,
+		arg.Uncertain,
+	)
 	return err
 }
 

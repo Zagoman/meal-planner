@@ -1,0 +1,197 @@
+package web
+
+import "github.com/Zagoman/meal-planner/internal/domain"
+
+// recipeForm is the form for a recipe checked after an import (L3) or
+// written by hand. Uncertain marks fields Claude could not read clearly.
+type recipeForm struct {
+	Action      string // where the form posts
+	Discard     string // POST target to throw a draft away; "" for none
+	Heading     string
+	Note        string
+	Title       string
+	MealType    domain.MealType
+	Protein     domain.Protein
+	Minutes     string
+	Servings    string
+	OnePot      bool
+	Ingredients []formIngredient
+	Steps       []formStep
+	Uncertain   map[string]bool
+	Sections    []domain.Section
+	Problems    []string
+}
+
+type formIngredient struct {
+	Name, Qty, Unit, Section string
+}
+
+type formStep struct {
+	Text, Timer string
+	Baby        bool
+}
+
+// ---- L2 Add a recipe ------------------------------------------------------------
+
+templ AddRecipePage(text, errMsg string) {
+	@SubLayout("Add a recipe", TabRecipes, "/recipes", "Recipes") {
+		<p class="sub small muted">Claude turns it into a recipe you can check before saving.</p>
+		if errMsg != "" {
+			<p class="notice warn" role="alert">{ errMsg }</p>
+		}
+		<form class="opt-card" action="/recipes/import" method="post" enctype="multipart/form-data" hx-boost="false">
+			<input type="hidden" name="source" value="photo"/>
+			<label class="opt">
+				<span class="ico">@icon("M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z M12 10a3 3 0 1 0 0 6 3 3 0 0 0 0-6")</span>
+				<span><span class="opt-title">Take a photo</span><span class="small muted">A cookbook page or a handwritten card</span></span>
+				<input type="file" name="photo" accept="image/*" capture="environment" required class="file-input" onchange="this.form.requestSubmit()"/>
+			</label>
+			<noscript><button type="submit">Read photo</button></noscript>
+		</form>
+		<form class="opt-card stack" action="/recipes/import" method="post">
+			<div class="opt static">
+				<span class="ico">@icon("M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71")</span>
+				<span><span class="opt-title">Paste text or a link</span><span class="small muted">From a website, a message or a note</span></span>
+			</div>
+			<label class="visually-hidden" for="import-text">Recipe text or link</label>
+			<textarea id="import-text" name="text" rows="6" required maxlength="20000" placeholder="Paste the recipe, or a link to it">{ text }</textarea>
+			<button type="submit" class="primary wide">Read recipe</button>
+		</form>
+		<a class="opt opt-card" href="/recipes/new">
+			<span class="ico">@icon("M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z")</span>
+			<span><span class="opt-title">Write it yourself</span><span class="small muted">Fill in the form by hand</span></span>
+		</a>
+		<p class="small muted">Every way ends on the same form, so you can check and fix what Claude read.</p>
+	}
+}
+
+// ReadingPage waits while Claude reads the recipe; the status refetches when
+// the import job finishes and reloads the page.
+templ ReadingPage(d domain.RecipeDraft) {
+	@FullLayout("Reading your recipe", "/recipes/add", "Add a recipe") {
+		<div hx-ext="sse" sse-connect="/events">
+			<div id="import-status" hx-get={ "/recipes/drafts/" + d.ID.String() + "/status" } hx-trigger={ "sse:recipe-" + d.ID.String() + ", every 5s" } hx-swap="outerHTML">
+				<p class="notice" role="status"><span class="spinner" aria-hidden="true"></span> Claude is reading your recipe…</p>
+				<p class="small muted">This takes up to a minute. You can leave this page; the recipe waits here.</p>
+			</div>
+		</div>
+	}
+}
+
+// ImportFailedPage says the import failed and offers to paste the text.
+templ ImportFailedPage(d domain.RecipeDraft, linkFailed bool) {
+	@FullLayout("Add a recipe", "/recipes/add", "Add a recipe") {
+		if linkFailed {
+			<p class="notice warn" role="alert">Couldn't open that page. Paste the recipe text instead.</p>
+		} else {
+			<p class="notice warn" role="alert">Couldn't read the recipe. Try again, or paste the text.</p>
+		}
+		<form class="stack" action="/recipes/import" method="post">
+			<label for="retry-text">Recipe text</label>
+			<textarea id="retry-text" name="text" rows="8" required maxlength="20000" placeholder="Paste the recipe">
+				if d.Source == domain.ImportText {
+					{ d.RawInput }
+				}
+			</textarea>
+			<button type="submit" class="primary wide">Read recipe</button>
+		</form>
+		<form action={ templ.SafeURL("/recipes/drafts/" + d.ID.String() + "/discard") } method="post">
+			<button type="submit" class="link">Discard</button>
+		</form>
+	}
+}
+
+// ---- L3 Check the recipe (and manual entry) ------------------------------------------
+
+templ RecipeFormPage(f recipeForm) {
+	@FullLayout(f.Heading, "/recipes/add", "Add a recipe") {
+		if f.Note != "" {
+			<p class="note">{ f.Note }</p>
+		}
+		if len(f.Problems) > 0 {
+			@Flash("Please fix the following:", f.Problems)
+		}
+		<form class="recipe-form stack" action={ templ.SafeURL(f.Action) } method="post">
+			<label>Title <input name="title" required maxlength="200" value={ f.Title } class={ templ.KV("flag", f.Uncertain["title"]) }/></label>
+			<div class="row3">
+				<label>
+					Meal type
+					<select name="meal_type" class={ templ.KV("flag", f.Uncertain["meal_type"]) }>
+						for _, t := range append(domain.PlannedMealTypes, domain.MealOther) {
+							<option value={ string(t) } selected?={ t == f.MealType }>{ t.Label() }</option>
+						}
+					</select>
+				</label>
+				<label>Minutes <input name="minutes" type="number" inputmode="numeric" min="1" required value={ f.Minutes } class={ templ.KV("flag", f.Uncertain["minutes"]) }/></label>
+				<label>Serves <input name="servings" type="number" inputmode="numeric" min="1" required value={ f.Servings } class={ templ.KV("flag", f.Uncertain["servings"]) }/></label>
+			</div>
+			<div class="row3">
+				<label>
+					Protein
+					<select name="protein">
+						for _, p := range proteins {
+							<option value={ string(p) } selected?={ p == f.Protein }>{ string(p) }</option>
+						}
+					</select>
+				</label>
+				<label class="check"><input type="checkbox" name="one_pot" value="on" checked?={ f.OnePot }/> One pot</label>
+			</div>
+			<h2 class="sec-label">Ingredients</h2>
+			<div id="ing-rows" class="stack-sm">
+				for i, in := range f.Ingredients {
+					@ingredientRow(i, in, f)
+				}
+			</div>
+			<button type="button" class="link" data-add-row="ing-rows">+ Add ingredient</button>
+			<h2 class="sec-label">Steps</h2>
+			<div id="step-rows" class="stack-sm">
+				for i, st := range f.Steps {
+					@stepRow(i, st, f)
+				}
+			</div>
+			<button type="button" class="link" data-add-row="step-rows">+ Add step</button>
+			<div class="form-foot">
+				if f.Discard != "" {
+					<button type="submit" class="secondary-btn" formaction={ templ.SafeURL(f.Discard) } formnovalidate>Discard</button>
+				} else {
+					<a class="button secondary-btn" href="/recipes">Cancel</a>
+				}
+				<button type="submit" class="primary">Save to library</button>
+			</div>
+		</form>
+	}
+}
+
+templ ingredientRow(i int, in formIngredient, f recipeForm) {
+	{{ path := "ingredients[" + itoa(i) + "]" }}
+	<div class="ing-row" data-row>
+		<label class="visually-hidden" for={ "ing-name-" + itoa(i) }>Ingredient { itoa(i + 1) }</label>
+		<input id={ "ing-name-" + itoa(i) } name="ing_name" value={ in.Name } placeholder="Ingredient"
+			class={ templ.KV("flag", f.Uncertain[path] || f.Uncertain[path+".name"]) }/>
+		<label class="visually-hidden" for={ "ing-qty-" + itoa(i) }>Amount</label>
+		<input id={ "ing-qty-" + itoa(i) } name="ing_qty" value={ in.Qty } placeholder="Amount" inputmode="decimal"
+			class={ templ.KV("flag", f.Uncertain[path] || f.Uncertain[path+".qty"]) }/>
+		<label class="visually-hidden" for={ "ing-unit-" + itoa(i) }>Unit</label>
+		<input id={ "ing-unit-" + itoa(i) } name="ing_unit" value={ in.Unit } placeholder="Unit"
+			class={ templ.KV("flag", f.Uncertain[path] || f.Uncertain[path+".unit"]) }/>
+		<label class="visually-hidden" for={ "ing-sec-" + itoa(i) }>Section</label>
+		<select id={ "ing-sec-" + itoa(i) } name="ing_section" class={ templ.KV("flag", f.Uncertain[path+".section"]) }>
+			for _, s := range f.Sections {
+				<option value={ s.Key } selected?={ s.Key == in.Section || (in.Section == "" && s.Key == "other") }>{ s.Name }</option>
+			}
+		</select>
+	</div>
+}
+
+templ stepRow(i int, st formStep, f recipeForm) {
+	{{ path := "steps[" + itoa(i) + "]" }}
+	<div class="step-row" data-row>
+		<label class="visually-hidden" for={ "step-text-" + itoa(i) }>Step { itoa(i + 1) }</label>
+		<textarea id={ "step-text-" + itoa(i) } name="step_text" rows="2" placeholder={ "Step " + itoa(i+1) }
+			class={ templ.KV("flag", f.Uncertain[path] || f.Uncertain[path+".text"]) }>{ st.Text }</textarea>
+		<div class="step-opts">
+			<label>Timer (min) <input name="step_timer" type="number" inputmode="numeric" min="1" value={ st.Timer } class="timer-input"/></label>
+			<label class="check"><input type="radio" name="baby_step" value={ itoa(i) } checked?={ st.Baby }/> Baby-portion step</label>
+		</div>
+	</div>
+}

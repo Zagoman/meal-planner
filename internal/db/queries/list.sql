@@ -33,6 +33,22 @@ UPDATE list_items SET
     checked = sqlc.arg(checked),
     checked_by = CASE WHEN sqlc.arg(checked)::boolean THEN sqlc.narg(checked_by)::uuid END,
     checked_at = CASE WHEN sqlc.arg(checked)::boolean THEN now() END,
+    tick_at = now(),
+    updated_at = now()
+WHERE id = sqlc.arg(id) AND household_id = sqlc.arg(household_id)
+RETURNING *;
+
+-- name: SetListItemCheckedAt :one
+-- A tick made at tick_at (an offline tick sent later). It applies only if
+-- no later tick of the item was applied: the last tick wins. The row is
+-- returned either way.
+UPDATE list_items SET
+    checked = CASE WHEN tick_at IS NULL OR tick_at <= sqlc.arg(tick_at)::timestamptz THEN sqlc.arg(checked)::boolean ELSE checked END,
+    checked_by = CASE WHEN tick_at IS NULL OR tick_at <= sqlc.arg(tick_at)::timestamptz
+        THEN (CASE WHEN sqlc.arg(checked)::boolean THEN sqlc.narg(checked_by)::uuid END) ELSE checked_by END,
+    checked_at = CASE WHEN tick_at IS NULL OR tick_at <= sqlc.arg(tick_at)::timestamptz
+        THEN (CASE WHEN sqlc.arg(checked)::boolean THEN sqlc.arg(tick_at)::timestamptz END) ELSE checked_at END,
+    tick_at = greatest(coalesce(tick_at, sqlc.arg(tick_at)::timestamptz), sqlc.arg(tick_at)::timestamptz),
     updated_at = now()
 WHERE id = sqlc.arg(id) AND household_id = sqlc.arg(household_id)
 RETURNING *;

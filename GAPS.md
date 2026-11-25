@@ -43,6 +43,13 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | G-23 | Accounts | Signing in by link does not sign out other sessions, and there is no list of active sessions or a "sign out everywhere". | A lost phone stays signed in up to 30 days (changing the password signs out the others). | A sessions list on the account page. | W4 |
 | G-24 | Join | The old invite route still lets a new person sign up with a password (`POST /invite/{token}/signup`); the join page itself only offers email links. | Two ways in; harmless. | Remove the password sign-up once nobody uses old links. | W4 |
 | G-25 | Setup | Only the household's first plan and the weekly draft send the "draft ready" email; a plan made with "make it now" doesn't. | Deliberate (the person is looking at the screen), but other members aren't told. | Email the other members only. | W4 |
+| G-26 | Import | Photos are not turned upright from their EXIF orientation before they go to Claude. | A sideways phone photo is sent sideways; Claude usually still reads it. | Apply the EXIF orientation in `imagefit.Fit`. | W5 |
+| G-27 | Import | Recipe drafts that are never saved or discarded stay in `recipe_drafts` (without the photo once read). | A little clutter in the database; not shown anywhere. | Delete drafts older than 30 days in the scheduler. | W5 |
+| G-28 | Library | A saved recipe can't be edited afterwards (only tweaked with Claude, which makes a new version). | A typo found later stays, or needs a tweak. | An "Edit" link reusing the check form. | W5 |
+| G-29 | Recipe page | The C1 wireframe's "Swap ingredient" button is not built (the service has `Substitute`, reachable through the JSON API only). | Swapping one ingredient needs Ask Claude or a tweak. | A small form on the meal page calling `Plans.Substitute`. | W5 |
+| G-30 | Cook mode | A running timer stops showing when you move to another step (the alarm still sounds). | You have to step back to see the time left. | Keep running timers in a bar above the step. | W5 |
+| G-31 | Cook mode | The Screen Wake Lock could not be checked in the preview browser (it fell back to "may turn the screen off"). | Works on phones that support it; unverified here. | Check on a phone. | W5 |
+| G-32 | Offline ticks | "Last tick wins" uses the phone's clock for offline ticks (clamped to the last 7 days and never later than the server's now). | A phone with a clock far behind can lose a tick it made later. | Fine for a household; a vector clock would be overkill. | W5 |
 
 ## Deviations from the handoff (on purpose)
 
@@ -64,6 +71,13 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | Passwords | email links only | email links first; password sign-in kept behind "Sign in with a password" | Agreed at the start; email depends on the Resend setup (G-21). |
 | Invite links | `/join/{token}` | `/join/{token}`; old `/invite/{token}` links redirect there | Links already sent keep working. |
 | Create household | `POST /api/households` | `admin_email` optional; the response's `invite.url` is the one-time admin link | The first admin joins like everyone else. |
+| Add a recipe (L2) | not routed | `GET /recipes/add` | The library's "Add recipe" button needs a page. |
+| Manual entry | `GET /recipes/new` | also `POST /recipes` to save it | The handoff lists only the page. |
+| Import status | redirect when the job finishes | `GET /recipes/drafts/{id}/status` (SSE `recipe-<id>` and every 5 s), reloads the page when done; `POST /recipes/drafts/{id}/discard` | The reading page needs something to poll; a draft needs a way out. |
+| Recipe form amounts | "500 g" in one field | amount and unit in two fields | No parsing guesswork; Claude fills both. |
+| Never-eat link | `GET /avoid/confirm` returns the sheet | the sheet for htmx, a full confirm page without JavaScript (`back=` returns to the recipe) | Works without JavaScript. |
+| Offline tick | last tick per item | each tick carries the time it was made (`at`) and applies only if it is the latest | "Last tick" across phones, not only within one phone's queue. |
+| Cook mode | `GET /recipes/{id}/cook` | also `GET /meals/{id}/cook` (the meal page's "Start cooking") | Week meals are meals, not library recipes. |
 
 ## Fixed
 
@@ -78,4 +92,6 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | — | Swap and remove icons drew wrong (joined SVG paths). | W2 (before commit) |
 | — | "Add to this week" with another household's recipe id answered 409 instead of 404 when the caller had no plan (found by the route walk in the window 4 isolation test). | W4 (before commit) |
 | — | The setup questions showed "1 of 4" under the question instead of above it. | W4 (before commit) |
+| — | The avoid sheet stayed open after "Avoid …" (the close handler was on the button; htmx fires on the form). | W5 (before commit) |
+| — | The avoid toast started with a lower-case ingredient name. | W5 (before commit) |
 | — | A 31 MB local build of the server binary (`server`, from `go build ./cmd/...`) was committed in `6fdd950` and pushed. Removed and ignored; it is still in the git history unless that is rewritten. | after W4 |

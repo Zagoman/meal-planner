@@ -116,3 +116,21 @@ UPDATE meals SET recipe_id = $3 WHERE id = $1 AND household_id = $2;
 -- name: LatestRecipeJob :one
 SELECT * FROM jobs WHERE household_id = $1 AND kind = 'tweak' AND payload ->> 'recipe_id' = sqlc.arg(recipe_id)::text
 ORDER BY created_at DESC LIMIT 1;
+
+-- name: CreateRecipeDraft :one
+INSERT INTO recipe_drafts (household_id, source, raw_input, photo, photo_type, created_by)
+VALUES ($1, $2, $3, $4, $5, $6) RETURNING *;
+
+-- name: GetRecipeDraft :one
+SELECT * FROM recipe_drafts WHERE id = $1 AND household_id = $2;
+
+-- name: SetRecipeDraftParsed :exec
+-- The photo is dropped as soon as it has been read.
+UPDATE recipe_drafts SET parsed = $3, uncertain = $4, photo = NULL WHERE id = $1 AND household_id = $2;
+
+-- name: DeleteRecipeDraft :execrows
+DELETE FROM recipe_drafts WHERE id = $1 AND household_id = $2;
+
+-- name: LatestDraftJob :one
+SELECT * FROM jobs WHERE household_id = $1 AND kind = 'import' AND payload ->> 'draft_id' = sqlc.arg(draft_id)::text
+ORDER BY created_at DESC LIMIT 1;

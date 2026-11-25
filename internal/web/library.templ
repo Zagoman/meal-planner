@@ -163,6 +163,7 @@ var recipeFilters = []struct {
 
 templ RecipesPage(q string, filter domain.RecipeFilter, recipes []domain.RecipeSummary) {
 	@Layout("Recipes", TabRecipes) {
+		<p class="page-action"><a class="button primary" href="/recipes/add">Add recipe</a></p>
 		<form class="search" action="/recipes" method="get" hx-get="/recipes" hx-target="#recipe-results" hx-swap="outerHTML" hx-push-url="true"
 			hx-trigger="input changed delay:300ms from:#recipe-q, change from:input[name=filter], submit">
 			<label class="search-box" for="recipe-q">
@@ -247,6 +248,7 @@ templ RecipeDetailPage(d domain.RecipeDetail) {
 				}
 			</ol>
 			<div class="recipe-foot">
+				<a class="button secondary-btn wide" href={ templ.SafeURL("/recipes/" + d.ID.String() + "/cook") }>Start cooking</a>
 				<form action={ templ.SafeURL("/recipes/" + d.ID.String() + "/add-next") } method="post" hx-post={ "/recipes/" + d.ID.String() + "/add-next" } hx-swap="none">
 					<button type="submit" class="primary wide">Add to next week</button>
 				</form>

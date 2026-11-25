@@ -1,10 +1,11 @@
 // Meal Planner client. Small vanilla JS only (package C):
 //   - service worker registration
 //   - offline badge
-//   - offline tick queue (localStorage), replayed when back online
+//   - offline tick queue (IndexedDB), sent in order when back online
 //   - plan-generation progress counter
 //   - copy buttons, flash dismiss
-//   - cook mode: one step at a time, timers, Screen Wake Lock
+//   - cook mode pages: timers, Screen Wake Lock
+//   - recipe form: add ingredient / step rows
 // Every handler is delegated from document, so it survives hx-boost swaps.
 (() => {
   "use strict";
@@ -17,25 +18,71 @@
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
   // ---- offline tick queue --------------------------------------------------
-  // Pending ticks are { itemId: checked }: the last tap wins, and the server
-  // endpoint sets (not toggles) the state, so replaying is idempotent.
-  const QUEUE_KEY = "mp:tickQueue";
+  // Ticks made offline are stored in IndexedDB as { itemId, checked, at } in
+  // the order they were made and sent in that order when back online. Each
+  // carries the time it was made; the server applies a tick only if no later
+  // one of the item was applied, so the last tick wins across phones.
+  const DB_NAME = "mp";
+  const STORE = "ticks";
+  const OLD_KEY = "mp:tickQueue"; // localStorage queue of earlier versions
+  let queue = []; // in-memory mirror, in order: { key, itemId, checked, at }
 
-  function readQueue() {
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      if (!("indexedDB" in window)) return reject(new Error("no IndexedDB"));
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: "key", autoIncrement: true });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function dbRun(mode, fn) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, mode);
+      const out = fn(tx.objectStore(STORE));
+      tx.oncomplete = () => resolve(out && "result" in out ? out.result : undefined);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function loadQueue() {
     try {
-      return JSON.parse(localStorage.getItem(QUEUE_KEY) || "{}") || {};
+      queue = (await dbRun("readonly", (st) => st.getAll())) || [];
     } catch {
-      return {};
+      queue = queue || [];
+    }
+    // Move a queue left by an earlier version.
+    try {
+      const old = JSON.parse(localStorage.getItem(OLD_KEY) || "{}") || {};
+      localStorage.removeItem(OLD_KEY);
+      for (const [id, checked] of Object.entries(old)) await addTick(id, checked, Date.now());
+    } catch {
+      /* nothing to move */
     }
   }
-  function writeQueue(q) {
+  async function addTick(itemId, checked, at) {
+    const entry = { itemId, checked, at };
+    queue.push(entry);
     try {
-      if (Object.keys(q).length === 0) localStorage.removeItem(QUEUE_KEY);
-      else localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+      entry.key = await dbRun("readwrite", (st) => st.add({ itemId, checked, at }));
     } catch {
-      /* storage full or blocked: the tick stays only on screen */
+      /* no IndexedDB: the tick stays in memory until the page closes */
     }
     updateBadge();
+  }
+  async function dropTick(entry) {
+    queue = queue.filter((e) => e !== entry);
+    if (entry.key !== undefined) {
+      try {
+        await dbRun("readwrite", (st) => st.delete(entry.key));
+      } catch {
+        /* already gone */
+      }
+    }
+    updateBadge();
+  }
+  function pendingItems() {
+    return new Set(queue.map((e) => e.itemId)).size;
   }
 
   function showTick(itemId, checked) {
@@ -65,53 +112,49 @@
   }
 
   function queueTick(itemId, checked) {
-    const q = readQueue();
-    q[itemId] = checked;
-    writeQueue(q);
     showTick(itemId, checked);
+    addTick(itemId, checked, Date.now());
   }
 
-  // Re-apply queued ticks after the list is re-rendered (SSE, cached page).
+  // Re-apply queued ticks after the list is re-rendered (SSE, cached page):
+  // the latest queued tick of each item.
   function applyQueue() {
-    const q = readQueue();
-    for (const [id, checked] of Object.entries(q)) showTick(id, checked);
+    const latest = new Map();
+    for (const e of queue) latest.set(e.itemId, e.checked);
+    for (const [id, checked] of latest) showTick(id, checked);
   }
 
   let replaying = false;
   async function replay() {
-    if (replaying) return;
-    const q = readQueue();
-    const ids = Object.keys(q);
-    if (ids.length === 0) return;
+    if (replaying || queue.length === 0) return;
     replaying = true;
     try {
-      for (const id of ids) {
+      for (const entry of [...queue]) {
         let res;
         try {
-          res = await fetch(`/list/items/${encodeURIComponent(id)}/toggle`, {
+          res = await fetch(`/list/items/${encodeURIComponent(entry.itemId)}/toggle`, {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/x-www-form-urlencoded", "HX-Request": "true" },
-            body: new URLSearchParams({ checked: String(q[id]) }),
+            body: new URLSearchParams({ checked: String(entry.checked), at: new Date(entry.at).toISOString() }),
           });
         } catch {
           setOffline(true);
           return; // still offline; try again later
         }
-        const now = readQueue();
-        if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 408 && res.status !== 429)) {
+        if (res.status === 401) return; // logged out: keep the queue until the next login
+        if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429)) {
           // Done, or the item is gone (404 after a rebuild): drop it.
-          if (now[id] === q[id]) delete now[id];
-          writeQueue(now);
-          const li = document.getElementById("item-" + id);
-          if (li && res.ok) {
-            const html = await res.text();
-            li.outerHTML = html;
-            const fresh = document.getElementById("item-" + id);
+          await dropTick(entry);
+          const isLast = !queue.some((e) => e.itemId === entry.itemId);
+          const li = document.getElementById("item-" + entry.itemId);
+          if (li && res.ok && isLast) {
+            li.outerHTML = await res.text();
+            const fresh = document.getElementById("item-" + entry.itemId);
             if (fresh && window.htmx) htmx.process(fresh);
           }
-        } else if (res.status === 401) {
-          return; // logged out: keep the queue until the next login
+        } else {
+          return; // server trouble: try again later
         }
       }
       setOffline(false);
@@ -129,7 +172,7 @@
   function updateBadge() {
     const badge = $("#offline-badge");
     if (!badge) return;
-    const n = Object.keys(readQueue()).length;
+    const n = pendingItems();
     const show = offline || n > 0;
     badge.hidden = !show;
     badge.textContent = offline
@@ -143,7 +186,7 @@
   });
   window.addEventListener("offline", () => setOffline(true));
   setInterval(() => {
-    if (Object.keys(readQueue()).length > 0) replay();
+    if (queue.length > 0) replay();
   }, 15000);
 
   document.addEventListener("htmx:sseOpen", () => {
@@ -244,10 +287,7 @@
       return;
     }
     if (t.matches("[data-timer-min]")) return toggleTimer(t);
-    if (t.matches("[data-cook-open]")) return openCook();
-    if (t.matches("[data-cook-close]")) return closeCook();
-    if (t.matches("[data-cook-next]")) return stepCook(1);
-    if (t.matches("[data-cook-prev]")) return stepCook(-1);
+    if (t.matches("[data-add-row]")) return addRow(t.dataset.addRow);
   });
 
   // ---- timers --------------------------------------------------------------
@@ -258,13 +298,18 @@
     const s = sec % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
   }
+  // A timer button counts down in its own label, or in the
+  // [data-timer-display] next to it (cook mode).
   function toggleTimer(btn) {
     const minutes = Number(btn.dataset.timerMin);
+    const display = btn.parentElement && btn.parentElement.querySelector("[data-timer-display]");
+    const idle = display ? "Start timer" : `⏱ ${minutes} min timer`;
     if (timers.has(btn)) {
       clearInterval(timers.get(btn));
       timers.delete(btn);
       btn.classList.remove("running", "done");
-      btn.textContent = `⏱ ${minutes} min timer`;
+      btn.textContent = idle;
+      if (display) display.textContent = fmt(minutes * 60);
       return;
     }
     const end = Date.now() + minutes * 60000;
@@ -272,13 +317,19 @@
     btn.classList.remove("done");
     const tick = () => {
       const left = Math.max(0, Math.round((end - Date.now()) / 1000));
-      btn.textContent = `⏱ ${fmt(left)} · tap to stop`;
+      if (display) {
+        display.textContent = fmt(left);
+        btn.textContent = "Stop";
+      } else {
+        btn.textContent = `⏱ ${fmt(left)} · tap to stop`;
+      }
       if (left === 0) {
         clearInterval(timers.get(btn));
         timers.set(btn, null);
         btn.classList.remove("running");
         btn.classList.add("done");
-        btn.textContent = "⏰ Time's up! Tap to reset";
+        btn.textContent = display ? "Reset" : "⏰ Time's up! Tap to reset";
+        if (display) display.textContent = "Time's up!";
         alarm();
       }
     };
@@ -308,80 +359,73 @@
   }
 
   // ---- cook mode + wake lock -----------------------------------------------
-  let step = 0;
+  // Cook mode pages ([data-cook]) keep the screen on with the Screen Wake
+  // Lock where the browser has it; without it, nothing breaks.
   let wakeLock = null;
 
   async function lockScreen() {
     const status = $("[data-wake-status]");
     if (!("wakeLock" in navigator)) {
-      if (status) status.textContent = "Screen may turn off (not supported)";
+      if (status) status.textContent = "This phone may turn the screen off while cooking";
       return;
     }
+    if (wakeLock) return;
     try {
       wakeLock = await navigator.wakeLock.request("screen");
-      if (status) status.textContent = "Screen stays on";
+      if (status) status.textContent = "Screen stays on while cooking";
       wakeLock.addEventListener("release", () => {
-        if (status && !$("#cook")?.hidden) status.textContent = "Screen may turn off";
+        wakeLock = null;
       });
     } catch {
-      if (status) status.textContent = "Screen may turn off";
+      if (status) status.textContent = "This phone may turn the screen off while cooking";
     }
   }
   function unlockScreen() {
     if (wakeLock) wakeLock.release().catch(() => {});
     wakeLock = null;
   }
+  function syncCook() {
+    if ($("[data-cook]")) lockScreen();
+    else unlockScreen();
+  }
   // The lock is dropped when the tab is hidden; take it again on return.
   document.addEventListener("visibilitychange", () => {
-    const cook = $("#cook");
-    if (document.visibilityState === "visible" && cook && !cook.hidden) lockScreen();
+    if (document.visibilityState === "visible") syncCook();
   });
-
-  function showStep() {
-    const steps = $$("#cook .cook-step");
-    steps.forEach((s, i) => (s.hidden = i !== step));
-    const pos = $("[data-cook-pos]");
-    if (pos) pos.textContent = `${step + 1} / ${steps.length}`;
-    const prev = $("[data-cook-prev]");
-    const next = $("[data-cook-next]");
-    if (prev) prev.disabled = step === 0;
-    if (next) next.textContent = step === steps.length - 1 ? "Done ✓" : "Next →";
-  }
-  function openCook() {
-    const cook = $("#cook");
-    if (!cook) return;
-    step = 0;
-    cook.hidden = false;
-    document.body.classList.add("cooking");
-    showStep();
-    lockScreen();
-  }
-  function closeCook() {
-    const cook = $("#cook");
-    if (cook) cook.hidden = true;
-    document.body.classList.remove("cooking");
-    unlockScreen();
-  }
-  function stepCook(d) {
-    const n = $$("#cook .cook-step").length;
-    if (step + d >= n) return closeCook();
-    step = Math.max(0, step + d);
-    showStep();
-  }
+  document.addEventListener("htmx:afterSettle", syncCook);
   document.addEventListener("keydown", (e) => {
-    const cook = $("#cook");
-    if (!cook || cook.hidden) return;
-    if (e.key === "Escape") closeCook();
-    if (e.key === "ArrowRight") stepCook(1);
-    if (e.key === "ArrowLeft") stepCook(-1);
+    if (!$("[data-cook]")) return;
+    const link = e.key === "ArrowRight" ? $(".cook-nav a.primary") : e.key === "ArrowLeft" ? $(".cook-nav a.secondary-btn") : null;
+    if (link) link.click();
   });
-
-  // Leaving the page (boosted navigation): drop timers and the wake lock,
-  // and do not save an open cook overlay into htmx's history cache.
+  // Leaving a page: drop timers.
   document.addEventListener("htmx:beforeHistorySave", () => {
-    closeCook();
     clearTimers();
   });
+
+  // ---- recipe form: one more ingredient or step row --------------------------
+  function addRow(containerId) {
+    const box = document.getElementById(containerId);
+    const rows = box ? box.querySelectorAll("[data-row]") : [];
+    if (!rows.length) return;
+    const n = rows.length;
+    const row = rows[rows.length - 1].cloneNode(true);
+    row.querySelectorAll("input, textarea, select").forEach((el) => {
+      if (el.id) el.id = el.id.replace(/-\d+$/, "-" + n);
+      el.classList.remove("flag");
+      if (el.type === "radio") {
+        el.checked = false;
+        el.value = String(n);
+      } else if (el.tagName !== "SELECT") {
+        el.value = "";
+      }
+      if (el.placeholder && /^Step \d+$/.test(el.placeholder)) el.placeholder = "Step " + (n + 1);
+    });
+    row.querySelectorAll("label[for]").forEach((l) => (l.htmlFor = l.htmlFor.replace(/-\d+$/, "-" + n)));
+    box.append(row);
+    const first = row.querySelector("input, textarea");
+    if (first) first.focus();
+  }
 
   // ---- setup steppers (− / + next to a number input) -------------------------
   document.addEventListener("click", (e) => {
@@ -396,9 +440,11 @@
   });
 
   // ---- start ---------------------------------------------------------------
-  function init() {
+  async function init() {
+    await loadQueue();
     applyQueue();
     updateBadge();
+    syncCook();
     if (navigator.onLine) replay();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

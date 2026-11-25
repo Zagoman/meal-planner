@@ -2,6 +2,7 @@ package claude
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,7 +58,11 @@ func (a *Anthropic) Generate(ctx context.Context, req Request) (Response, error)
 		block := anthropic.NewTextBlock(m.Content)
 		switch m.Role {
 		case "user":
-			msgs = append(msgs, anthropic.NewUserMessage(block))
+			blocks := make([]anthropic.ContentBlockParamUnion, 0, len(m.Images)+1)
+			for _, img := range m.Images {
+				blocks = append(blocks, anthropic.NewImageBlockBase64(img.MediaType, base64.StdEncoding.EncodeToString(img.Data)))
+			}
+			msgs = append(msgs, anthropic.NewUserMessage(append(blocks, block)...))
 		case "assistant":
 			msgs = append(msgs, anthropic.NewAssistantMessage(block))
 		default:

@@ -59,7 +59,18 @@ func (h *handlers) checkItem(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, &domain.ValidationError{Problems: []string{"checked: must be true or false"}})
 		return
 	}
-	it, err := h.svc.Lists.SetChecked(r.Context(), scope(r), id, checked)
+	var it domain.ListItem
+	if at := r.PostFormValue("at"); at != "" {
+		// An offline tick replayed later: applied only if it is the latest.
+		t, perr := time.Parse(time.RFC3339Nano, at)
+		if perr != nil {
+			h.fail(w, r, &domain.ValidationError{Problems: []string{"at: an RFC 3339 time"}})
+			return
+		}
+		it, err = h.svc.Lists.TickAt(r.Context(), scope(r), id, checked, t)
+	} else {
+		it, err = h.svc.Lists.SetChecked(r.Context(), scope(r), id, checked)
+	}
 	if err != nil {
 		h.fail(w, r, err)
 		return

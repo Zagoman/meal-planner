@@ -294,4 +294,49 @@ access for liluhome.dk, the SPF/DKIM/DMARC DNS records Resend gives you,
 
 **Known issues**: see G-21 to G-25 in GAPS.md.
 
-## Next: window 5 – Recipe import and cooking polish
+## Window 5 – Recipe import and cooking polish (branch `window-5-import-cooking`)
+
+**Built**
+
+- Migration `00006_recipe_drafts_ticks.sql`: `recipe_drafts` (source, raw
+  input, the photo until it is read, parsed recipe, `uncertain` field paths)
+  and `list_items.tick_at`.
+- `internal/imagefit`: photos are re-encoded as JPEG, at most 1600 px on the
+  long side (JPEG, PNG, GIF, WebP in; 15 MB max).
+- `internal/fetch`: link import fetches only public addresses (loopback,
+  private, link-local, CGNAT/Tailscale and reserved ranges refused at
+  connect time, so DNS tricks and redirects can't reach the home network),
+  10 s, 2 MB, html/text only; a page with schema.org Recipe JSON-LD is
+  reduced to that, otherwise to its visible text.
+- Claude client: images in user messages. Import schema
+  `recipe_import.schema.json` (the meal shape without `day`, plus
+  `uncertain`).
+- `Library`: `Import` (draft + `import` job), `ImportDraft`,
+  `DiscardImport`, `SaveImport` (source photo/text/link), `CreateRecipe`
+  (manual); `planner.CleanRecipe` validates both. The import job sends the
+  photo as an image, the text, or the fetched page; retries once; stores
+  the result and drops the photo. A failed link asks for the text.
+- `Lists.TickAt`: an offline tick applies only if no later tick of the item
+  was applied (time clamped to the last 7 days, never in the future).
+- Web: L2 `/recipes/add` (photo with camera capture, text or link, write it
+  yourself), reading page, L3 check form (unsure fields orange; same form
+  for `/recipes/new`), C1 meal page (avoid sheet per ingredient, toast with
+  Undo, baby step marked, Start cooking), C2 cook mode
+  `/meals/{id}/cook?step=n` and `/recipes/{id}/cook` (28 px text, baby
+  badge and what comes after it, big timer, Back/Next swapped with htmx,
+  screen kept on with the Wake Lock where supported), "Add recipe" in the
+  library.
+- Offline list: ticks queue in IndexedDB in order with their time, replayed
+  in order on reconnect (a queue from the old localStorage version is moved
+  over).
+- Tests: import (photo read and saved after checking, link, failed link,
+  bad input, manual validation, cross-household), avoid from a recipe keeps
+  the ingredient out of the next draft, last tick wins, the web routes
+  (import, check, save, discard, manual, avoid + Undo, cook, another
+  household 404), the window 4 route walk covers the new id routes, the
+  fetcher refuses the home network, the resizer, and Playwright's offline
+  test now reads the IndexedDB queue.
+
+**Known issues**: G-26 to G-32 in GAPS.md.
+
+All five windows of the handoff are built.

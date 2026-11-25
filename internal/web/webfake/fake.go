@@ -42,6 +42,8 @@ type Store struct {
 	invites    map[string]*invite
 	links      map[string]*loginLink // links.go
 	lastLink   map[string]string     // email -> newest link token
+	imports    map[uuid.UUID]*fakeDraft
+	tickAt     map[uuid.UUID]time.Time // item -> time of the tick applied
 }
 
 type member struct {
@@ -60,18 +62,19 @@ type invite struct {
 
 type household struct {
 	domain.Household
-	profile  domain.Profile
-	sections []domain.Section
-	pantry   []domain.PantryItem
-	avoid    []domain.AvoidItem
-	plan     *domain.Plan  // active plan, nil if none
-	draft    *draftState   // next week's draft (drafts.go)
-	library  *libraryState // outcomes and recipes (library.go)
-	meals    map[uuid.UUID]domain.Meal
-	items    []domain.ListItem
-	feedback []domain.Feedback
-	recipes  []domain.Recipe
-	next     int // recipe rotation
+	profile   domain.Profile
+	sections  []domain.Section
+	pantry    []domain.PantryItem
+	avoid     []domain.AvoidItem
+	plan      *domain.Plan  // active plan, nil if none
+	draft     *draftState   // next week's draft (drafts.go)
+	library   *libraryState // outcomes and recipes (library.go)
+	importIDs []uuid.UUID   // recipe drafts (imports.go)
+	meals     map[uuid.UUID]domain.Meal
+	items     []domain.ListItem
+	feedback  []domain.Feedback
+	recipes   []domain.Recipe
+	next      int // recipe rotation
 }
 
 var (
@@ -843,6 +846,9 @@ func (s *Store) AddItem(_ context.Context, sc domain.Scope, name, section string
 
 func (s *Store) SetChecked(_ context.Context, sc domain.Scope, itemID uuid.UUID, checked bool) (domain.ListItem, error) {
 	s.mu.Lock()
+	if s.tickAt != nil {
+		s.tickAt[itemID] = time.Now()
+	}
 	h, err := s.hh(sc)
 	if err != nil {
 		s.mu.Unlock()
