@@ -388,6 +388,12 @@ self-host the fonts, build family photos in step C.
   GAPS.md); e2e test added.
 - Service worker cache v3 (new CSS, fonts, icons).
 
+**Deployed** 2026-11-25 as `895e34ed656c`. Dump first:
+`mealplanner-20261125-210820.dump`. No migration; plans and the list
+unchanged (1 active, 6 archived, 188 list items). Phones pick up the new
+look once the service worker updates (cache v3); on iPhone the home-screen icon
+changes only after the app is added again.
+
 **Known issues**: G-33 to G-39 in GAPS.md; the design deviations are in its
 Deviations table.
 
