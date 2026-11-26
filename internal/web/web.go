@@ -139,6 +139,7 @@ func Routes(d app.Deps) http.Handler {
 		r.Delete("/meals/{id}", h.removeDraftMeal)
 		r.Post("/meals/{id}/delete", h.removeDraftMeal) // without JavaScript
 		r.Post("/meals/{id}/rate", h.rate)
+		r.Post("/meals/{id}/save", h.saveMeal)
 
 		r.Get("/recipes", h.recipesPage)
 		r.Get("/recipes/add", h.addRecipePage)

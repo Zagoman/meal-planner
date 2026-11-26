@@ -48,8 +48,8 @@ func (q *Queries) BannedRecipeTitles(ctx context.Context, householdID uuid.UUID)
 
 const createRecipe = `-- name: CreateRecipe :one
 INSERT INTO recipes (household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by,
-                     source, parent_recipe_id, meal_type, title_key)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $13, $11, $12) RETURNING id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key
+                     source, parent_recipe_id, meal_type, title_key, in_library)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $13, $11, $12, true) RETURNING id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key, in_library
 `
 
 type CreateRecipeParams struct {
@@ -68,6 +68,7 @@ type CreateRecipeParams struct {
 	ParentRecipeID uuid.NullUUID
 }
 
+// A recipe the household added or a tweaked version: both join the library.
 func (q *Queries) CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Recipe, error) {
 	row := q.db.QueryRow(ctx, createRecipe,
 		arg.HouseholdID,
@@ -101,6 +102,7 @@ func (q *Queries) CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Rec
 		&i.ParentRecipeID,
 		&i.MealType,
 		&i.TitleKey,
+		&i.InLibrary,
 	)
 	return i, err
 }
@@ -206,6 +208,45 @@ func (q *Queries) DeleteRecipePhoto(ctx context.Context, arg DeleteRecipePhotoPa
 	return result.RowsAffected(), nil
 }
 
+const getLibraryRecipeByTitle = `-- name: GetLibraryRecipeByTitle :one
+SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key, in_library FROM recipes
+WHERE household_id = $1 AND meal_type = $2 AND title_key = $3 AND in_library
+ORDER BY (parent_recipe_id IS NOT NULL), created_at DESC
+LIMIT 1
+`
+
+type GetLibraryRecipeByTitleParams struct {
+	HouseholdID uuid.UUID
+	MealType    string
+	TitleKey    string
+}
+
+// The library recipe a planned meal of this type and title reuses:
+// the original before a tweaked version, then the newest.
+func (q *Queries) GetLibraryRecipeByTitle(ctx context.Context, arg GetLibraryRecipeByTitleParams) (Recipe, error) {
+	row := q.db.QueryRow(ctx, getLibraryRecipeByTitle, arg.HouseholdID, arg.MealType, arg.TitleKey)
+	var i Recipe
+	err := row.Scan(
+		&i.ID,
+		&i.HouseholdID,
+		&i.SourceMealID,
+		&i.Title,
+		&i.Protein,
+		&i.Minutes,
+		&i.OnePot,
+		&i.Servings,
+		&i.Data,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.Source,
+		&i.ParentRecipeID,
+		&i.MealType,
+		&i.TitleKey,
+		&i.InLibrary,
+	)
+	return i, err
+}
+
 const getOutcome = `-- name: GetOutcome :one
 SELECT household_id, meal_id, status, rating, note, member_id, at FROM meal_outcomes WHERE meal_id = $1 AND household_id = $2
 `
@@ -231,7 +272,7 @@ func (q *Queries) GetOutcome(ctx context.Context, arg GetOutcomeParams) (MealOut
 }
 
 const getRecipe = `-- name: GetRecipe :one
-SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key FROM recipes WHERE id = $1 AND household_id = $2
+SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key, in_library FROM recipes WHERE id = $1 AND household_id = $2
 `
 
 type GetRecipeParams struct {
@@ -258,6 +299,7 @@ func (q *Queries) GetRecipe(ctx context.Context, arg GetRecipeParams) (Recipe, e
 		&i.ParentRecipeID,
 		&i.MealType,
 		&i.TitleKey,
+		&i.InLibrary,
 	)
 	return i, err
 }
@@ -420,6 +462,39 @@ func (q *Queries) LatestRecipeJob(ctx context.Context, arg LatestRecipeJobParams
 	return i, err
 }
 
+const listLibraryTitles = `-- name: ListLibraryTitles :many
+SELECT meal_type, title FROM recipes
+WHERE household_id = $1 AND in_library
+ORDER BY meal_type, lower(title)
+LIMIT 200
+`
+
+type ListLibraryTitlesRow struct {
+	MealType string
+	Title    string
+}
+
+// Titles in the library, for the planning prompt.
+func (q *Queries) ListLibraryTitles(ctx context.Context, householdID uuid.UUID) ([]ListLibraryTitlesRow, error) {
+	rows, err := q.db.Query(ctx, listLibraryTitles, householdID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLibraryTitlesRow{}
+	for rows.Next() {
+		var i ListLibraryTitlesRow
+		if err := rows.Scan(&i.MealType, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNotCooked = `-- name: ListNotCooked :many
 SELECT m.id AS meal_id, m.recipe_id, m.title, m.meal_type
 FROM meals m JOIN meal_outcomes o ON o.meal_id = m.id AND o.household_id = m.household_id
@@ -557,7 +632,7 @@ func (q *Queries) ListRecentFeedback(ctx context.Context, arg ListRecentFeedback
 }
 
 const listRecipes = `-- name: ListRecipes :many
-SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key FROM recipes WHERE household_id = $1 ORDER BY created_at DESC
+SELECT id, household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by, created_at, source, parent_recipe_id, meal_type, title_key, in_library FROM recipes WHERE household_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) ListRecipes(ctx context.Context, householdID uuid.UUID) ([]Recipe, error) {
@@ -585,6 +660,7 @@ func (q *Queries) ListRecipes(ctx context.Context, householdID uuid.UUID) ([]Rec
 			&i.ParentRecipeID,
 			&i.MealType,
 			&i.TitleKey,
+			&i.InLibrary,
 		); err != nil {
 			return nil, err
 		}
@@ -639,7 +715,7 @@ SELECT r.id, r.title, r.meal_type, r.minutes, r.source, r.parent_recipe_id, r.cr
 FROM recipes r
 LEFT JOIN meals m ON m.recipe_id = r.id AND m.household_id = r.household_id
 LEFT JOIN meal_outcomes o ON o.meal_id = m.id AND o.household_id = m.household_id
-WHERE r.household_id = $1
+WHERE r.household_id = $1 AND r.in_library
   AND ($2::text = ''
        OR r.title ILIKE '%' || $2 || '%'
        OR EXISTS (SELECT 1 FROM jsonb_array_elements(r.data -> 'ingredients') i
@@ -726,6 +802,24 @@ func (q *Queries) SetMealRecipe(ctx context.Context, arg SetMealRecipeParams) er
 	return err
 }
 
+const setMealRecipeInLibrary = `-- name: SetMealRecipeInLibrary :exec
+UPDATE recipes r SET in_library = true
+FROM meals m
+WHERE m.id = $1 AND m.household_id = $2
+  AND r.id = m.recipe_id AND r.household_id = m.household_id AND NOT r.in_library
+`
+
+type SetMealRecipeInLibraryParams struct {
+	MealID      uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+// A meal marked cooked puts its recipe in the library.
+func (q *Queries) SetMealRecipeInLibrary(ctx context.Context, arg SetMealRecipeInLibraryParams) error {
+	_, err := q.db.Exec(ctx, setMealRecipeInLibrary, arg.MealID, arg.HouseholdID)
+	return err
+}
+
 const setRecipeDraftParsed = `-- name: SetRecipeDraftParsed :exec
 UPDATE recipe_drafts SET parsed = $3, uncertain = $4, photo = NULL WHERE id = $1 AND household_id = $2
 `
@@ -746,6 +840,23 @@ func (q *Queries) SetRecipeDraftParsed(ctx context.Context, arg SetRecipeDraftPa
 		arg.Uncertain,
 	)
 	return err
+}
+
+const setRecipeInLibrary = `-- name: SetRecipeInLibrary :execrows
+UPDATE recipes SET in_library = true WHERE id = $1 AND household_id = $2
+`
+
+type SetRecipeInLibraryParams struct {
+	ID          uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+func (q *Queries) SetRecipeInLibrary(ctx context.Context, arg SetRecipeInLibraryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setRecipeInLibrary, arg.ID, arg.HouseholdID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertClaudeRecipe = `-- name: UpsertClaudeRecipe :one
@@ -772,6 +883,7 @@ type UpsertClaudeRecipeParams struct {
 }
 
 // A meal Claude suggests again reuses its recipe (same type and title).
+// It is not in the library until it is cooked or saved.
 func (q *Queries) UpsertClaudeRecipe(ctx context.Context, arg UpsertClaudeRecipeParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, upsertClaudeRecipe,
 		arg.HouseholdID,

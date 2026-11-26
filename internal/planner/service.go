@@ -112,7 +112,7 @@ func (s *Service) Generate(ctx context.Context, sc domain.Scope, prompt string) 
 		}
 		return domain.Plan{}, err
 	}
-	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt, Banned: hh.bannedLines()}
+	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt, Banned: hh.bannedLines(), Library: hh.library}
 	if hh.profile.TotalMeals() == 0 {
 		return domain.Plan{}, &domain.ValidationError{Problems: []string{"the profile plans no meals; set at least one meal per week"}}
 	}
@@ -170,7 +170,16 @@ func (s *Service) Meal(ctx context.Context, sc domain.Scope, mealID uuid.UUID) (
 	if err != nil {
 		return domain.Meal{}, notFound("meal", err)
 	}
-	return loadMeal(ctx, q, m)
+	meal, err := loadMeal(ctx, q, m)
+	if err != nil || meal.RecipeID == nil {
+		return meal, err
+	}
+	r, err := q.GetRecipe(ctx, db.GetRecipeParams{ID: *meal.RecipeID, HouseholdID: sc.HouseholdID})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return domain.Meal{}, fmt.Errorf("meal recipe: %w", err)
+	}
+	meal.InLibrary = err == nil && r.InLibrary
+	return meal, nil
 }
 
 // SwapMeal replaces (or fills) the dinner suggested for one day of the
@@ -215,7 +224,7 @@ func (s *Service) SwapMeal(ctx context.Context, sc domain.Scope, planID uuid.UUI
 		return domain.Meal{}, err
 	}
 	in := SwapInput{
-		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt, Banned: hh.bannedLines()},
+		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt, Banned: hh.bannedLines(), Library: hh.library},
 		MealType:    domain.MealDinner, Day: day, OtherMeals: others,
 	}
 	if old != nil {
@@ -410,9 +419,23 @@ func insertMeal(ctx context.Context, q *db.Queries, householdID, planID uuid.UUI
 	return meal, nil
 }
 
-// linkRecipe saves a meal Claude made to the library (or finds the recipe
-// it made before under the same type and title) and links the meal to it.
+// linkRecipe links a meal Claude made to a recipe: the library recipe of
+// the same type and title if there is one, else the recipe Claude made
+// before under that title, else a new one. A new recipe is not in the
+// library until the meal is cooked or saved.
 func linkRecipe(ctx context.Context, q *db.Queries, householdID, mealID uuid.UUID, m domain.MealJSON) error {
+	lib, err := q.GetLibraryRecipeByTitle(ctx, db.GetLibraryRecipeByTitleParams{
+		HouseholdID: householdID, MealType: string(m.MealType), TitleKey: domain.TitleKey(m.Title),
+	})
+	switch {
+	case err == nil:
+		if err := q.SetMealRecipe(ctx, db.SetMealRecipeParams{ID: mealID, HouseholdID: householdID, RecipeID: uuid.NullUUID{UUID: lib.ID, Valid: true}}); err != nil {
+			return fmt.Errorf("link recipe: %w", err)
+		}
+		return nil
+	case !errors.Is(err, pgx.ErrNoRows):
+		return fmt.Errorf("library recipe: %w", err)
+	}
 	saved := m
 	saved.Day = nil
 	if saved.AfterBabyPortion == nil {
@@ -577,6 +600,9 @@ type household struct {
 	// banned are meals never to plan, by title key: recipes rated 1 and
 	// last week's meals marked not cooked. The value says why.
 	banned map[string]Banned
+	// library are the household's library recipes ("dinner: Fish soup"),
+	// banned ones left out, for the prompt to reuse.
+	library []string
 }
 
 // Banned is a meal Claude must not plan.
@@ -654,6 +680,15 @@ func (s *Service) loadHousehold(ctx context.Context, q *db.Queries, householdID 
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return h, fmt.Errorf("active plan: %w", err)
+	}
+	lib, err := q.ListLibraryTitles(ctx, householdID)
+	if err != nil {
+		return h, fmt.Errorf("library titles: %w", err)
+	}
+	for _, r := range lib {
+		if _, ok := h.banned[domain.TitleKey(r.Title)]; !ok {
+			h.library = append(h.library, fmt.Sprintf("%s: %q", r.MealType, r.Title))
+		}
 	}
 	return h, nil
 }

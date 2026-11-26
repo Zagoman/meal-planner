@@ -724,7 +724,7 @@ func (s *Store) Meal(_ context.Context, sc domain.Scope, mealID uuid.UUID) (doma
 	}
 	if r := h.recipeFor(m.Title); r != nil {
 		id := r.ID
-		m.RecipeID = &id
+		m.RecipeID, m.InLibrary = &id, r.InLibrary
 	}
 	return m, nil
 }
@@ -935,6 +935,7 @@ func (s *Store) Rate(_ context.Context, sc domain.Scope, mealID uuid.UUID, ratin
 	f := domain.Feedback{ID: uuid.New(), MealID: mealID, Rating: rating, Note: note, CreatedAt: time.Now()}
 	h.feedback = append(h.feedback, f)
 	h.lib().outcomes[mealID] = domain.MealOutcome{MealID: mealID, Status: domain.Cooked, Rating: rating, Note: note, At: f.CreatedAt}
+	h.putInLibrary(h.meals[mealID].Title)
 	return f, nil
 }
 

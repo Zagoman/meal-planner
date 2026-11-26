@@ -42,12 +42,17 @@ func (s *Service) Rate(ctx context.Context, sc domain.Scope, mealID uuid.UUID, r
 	if err != nil {
 		return domain.Feedback{}, fmt.Errorf("rate meal: %w", err)
 	}
+	// A cooked meal's recipe joins the library.
+	if err := s.q.SetMealRecipeInLibrary(ctx, db.SetMealRecipeInLibraryParams{MealID: mealID, HouseholdID: sc.HouseholdID}); err != nil {
+		return domain.Feedback{}, fmt.Errorf("rate meal: library: %w", err)
+	}
 	// An outcome is one per meal, so its id is the meal's.
 	return domain.Feedback{ID: o.MealID, MealID: o.MealID, Rating: rating, Note: o.Note, CreatedAt: o.At}, nil
 }
 
 // SaveRecipe returns the library recipe of a meal of the household,
-// saving the meal to the library first if it has none. The recipe survives
+// saving the meal as a recipe first if it has none, and puts it in the
+// library. The recipe survives
 // the plan being archived or deleted.
 func (s *Service) SaveRecipe(ctx context.Context, sc domain.Scope, mealID uuid.UUID) (domain.Recipe, error) {
 	row, err := s.q.GetMeal(ctx, db.GetMealParams{ID: mealID, HouseholdID: sc.HouseholdID})
@@ -59,7 +64,7 @@ func (s *Service) SaveRecipe(ctx context.Context, sc domain.Scope, mealID uuid.U
 		if err != nil {
 			return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
 		}
-		data, err := json.Marshal(mealToJSON(m))
+		data, err := json.Marshal(MealToJSON(m))
 		if err != nil {
 			return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
 		}
@@ -83,6 +88,9 @@ func (s *Service) SaveRecipe(ctx context.Context, sc domain.Scope, mealID uuid.U
 			return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
 		}
 		row.RecipeID = uuid.NullUUID{UUID: id, Valid: true}
+	}
+	if _, err := s.q.SetRecipeInLibrary(ctx, db.SetRecipeInLibraryParams{ID: row.RecipeID.UUID, HouseholdID: sc.HouseholdID}); err != nil {
+		return domain.Recipe{}, fmt.Errorf("save recipe: %w", err)
 	}
 	r, err := s.q.GetRecipe(ctx, db.GetRecipeParams{ID: row.RecipeID.UUID, HouseholdID: sc.HouseholdID})
 	if err != nil {
@@ -144,7 +152,8 @@ func loadMeal(ctx context.Context, q *db.Queries, sc domain.Scope, mealID uuid.U
 	return out, nil
 }
 
-func mealToJSON(m domain.Meal) domain.MealJSON {
+// MealToJSON is a stored meal as recipe data.
+func MealToJSON(m domain.Meal) domain.MealJSON {
 	j := domain.MealJSON{
 		MealType: m.MealType, Title: m.Title, Protein: m.Protein, Minutes: m.Minutes, OnePot: m.OnePot,
 		Servings: m.Servings, AfterBabyPortion: nonNil(m.AfterBabyPortion),
@@ -190,7 +199,7 @@ func RecipeFromDB(r db.Recipe) (domain.Recipe, error) {
 	for _, st := range j.Steps {
 		m.Steps = append(m.Steps, domain.Step(st))
 	}
-	rec := domain.Recipe{ID: r.ID, Meal: m, CreatedAt: r.CreatedAt, Source: domain.RecipeSource(r.Source)}
+	rec := domain.Recipe{ID: r.ID, Meal: m, CreatedAt: r.CreatedAt, Source: domain.RecipeSource(r.Source), InLibrary: r.InLibrary}
 	if r.ParentRecipeID.Valid {
 		id := r.ParentRecipeID.UUID
 		rec.ParentID = &id

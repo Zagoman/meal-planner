@@ -691,7 +691,7 @@ func (s *Service) runDraft(ctx context.Context, job db.Job) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines()}
+	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines(), Library: hh.library}
 	if len(kept) > 0 {
 		for _, k := range kept {
 			in.Request += fmt.Sprintf("The household already added %q (%s); do not plan it again. ", k.Title, k.MealType)
@@ -810,7 +810,7 @@ func (s *Service) runSwap(ctx context.Context, job db.Job) (any, error) {
 	}
 	day := domain.Weekday(old.Day.String)
 	in := SwapInput{
-		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines()},
+		PromptInput: PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines(), Library: hh.library},
 		MealType:    domain.MealType(old.MealType), Day: day, Current: old.Title, OtherMeals: others,
 	}
 	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildSwapPrompt(in),
@@ -868,7 +868,7 @@ func (s *Service) runAsk(ctx context.Context, job db.Job) (any, error) {
 	for _, m := range meals {
 		delete(hh.banned, domain.TitleKey(m.Title))
 	}
-	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: p.Prompt, Banned: hh.bannedLines()}
+	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: p.Prompt, Banned: hh.bannedLines(), Library: hh.library}
 	rules := hh.rules(nil)
 	rules.AnyCount = true
 	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildAskPrompt(in, current), rules, kindAsk)
@@ -999,7 +999,7 @@ func (s *Service) replaceDisliked(ctx context.Context, sc domain.Scope, planID u
 		lines[i] = MealLine{Type: domain.MealType(m.MealType), Day: domain.Weekday(m.Day.String), Title: m.Title}
 		types[i] = domain.MealType(m.MealType)
 	}
-	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines()}
+	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Banned: hh.bannedLines(), Library: hh.library}
 	rules := hh.rules(nil)
 	rules.Replace = types
 	mp, err := s.ask(ctx, sc, BuildSystem(hh.profile), BuildReplacePrompt(in, lines, keep), rules, kindAutoConfirm)

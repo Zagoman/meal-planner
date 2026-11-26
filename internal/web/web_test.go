@@ -520,7 +520,7 @@ func TestRateAddBackAndLibrary(t *testing.T) {
 
 	// L1: the library, a search partial for htmx, filters.
 	rec = f.do(t, req{path: "/recipes", session: anna})
-	mustContain(t, "library", rec.Body.String(), `id="recipe-results"`, `name="q"`, "Rated 4+", "Our own", p.Meals[0].Title, "rated 4")
+	mustContain(t, "library", rec.Body.String(), `id="recipe-results"`, `name="q"`, "Rated 4+", p.Meals[0].Title, "rated 4") // no "Our own" chip: nothing added yet
 	rec = f.do(t, req{path: "/recipes?q=" + url.QueryEscape(strings.Fields(p.Meals[0].Title)[0]), session: anna, hx: true})
 	if b := rec.Body.String(); !strings.HasPrefix(b, `<div id="recipe-results"`) || !strings.Contains(b, p.Meals[0].Title) {
 		t.Errorf("search partial: %s", b[:min(200, len(b))])

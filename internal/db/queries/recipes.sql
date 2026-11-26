@@ -1,10 +1,12 @@
 -- name: CreateRecipe :one
+-- A recipe the household added or a tweaked version: both join the library.
 INSERT INTO recipes (household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by,
-                     source, parent_recipe_id, meal_type, title_key)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, sqlc.narg(parent_recipe_id), $11, $12) RETURNING *;
+                     source, parent_recipe_id, meal_type, title_key, in_library)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, sqlc.narg(parent_recipe_id), $11, $12, true) RETURNING *;
 
 -- name: UpsertClaudeRecipe :one
 -- A meal Claude suggests again reuses its recipe (same type and title).
+-- It is not in the library until it is cooked or saved.
 INSERT INTO recipes (household_id, source_meal_id, title, protein, minutes, one_pot, servings, data, created_by,
                      source, meal_type, title_key)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'claude', $10, $11)
@@ -14,6 +16,31 @@ RETURNING id;
 
 -- name: GetRecipe :one
 SELECT * FROM recipes WHERE id = $1 AND household_id = $2;
+
+-- name: GetLibraryRecipeByTitle :one
+-- The library recipe a planned meal of this type and title reuses:
+-- the original before a tweaked version, then the newest.
+SELECT * FROM recipes
+WHERE household_id = $1 AND meal_type = $2 AND title_key = $3 AND in_library
+ORDER BY (parent_recipe_id IS NOT NULL), created_at DESC
+LIMIT 1;
+
+-- name: SetRecipeInLibrary :execrows
+UPDATE recipes SET in_library = true WHERE id = $1 AND household_id = $2;
+
+-- name: SetMealRecipeInLibrary :exec
+-- A meal marked cooked puts its recipe in the library.
+UPDATE recipes r SET in_library = true
+FROM meals m
+WHERE m.id = sqlc.arg(meal_id) AND m.household_id = sqlc.arg(household_id)
+  AND r.id = m.recipe_id AND r.household_id = m.household_id AND NOT r.in_library;
+
+-- name: ListLibraryTitles :many
+-- Titles in the library, for the planning prompt.
+SELECT meal_type, title FROM recipes
+WHERE household_id = $1 AND in_library
+ORDER BY meal_type, lower(title)
+LIMIT 200;
 
 -- name: ListRecipes :many
 SELECT * FROM recipes WHERE household_id = $1 ORDER BY created_at DESC;
@@ -44,7 +71,7 @@ SELECT r.id, r.title, r.meal_type, r.minutes, r.source, r.parent_recipe_id, r.cr
 FROM recipes r
 LEFT JOIN meals m ON m.recipe_id = r.id AND m.household_id = r.household_id
 LEFT JOIN meal_outcomes o ON o.meal_id = m.id AND o.household_id = m.household_id
-WHERE r.household_id = sqlc.arg(household_id)
+WHERE r.household_id = sqlc.arg(household_id) AND r.in_library
   AND (sqlc.arg(q)::text = ''
        OR r.title ILIKE '%' || sqlc.arg(q) || '%'
        OR EXISTS (SELECT 1 FROM jsonb_array_elements(r.data -> 'ingredients') i

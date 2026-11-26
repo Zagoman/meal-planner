@@ -53,6 +53,26 @@ func (h *handlers) mealPage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, http.StatusOK, MealPage(m, pic))
 }
 
+// saveMeal is POST /meals/{id}/save: "Save to recipes" on the meal page.
+func (h *handlers) saveMeal(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	s := scope(r)
+	rec, err := h.svc.Library.SaveMeal(r.Context(), s, id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if !isHX(r) {
+		redirect(w, r, "/meals/"+id.String())
+		return
+	}
+	h.render(w, r, http.StatusOK, SaveToRecipes(domain.Meal{ID: id, RecipeID: &rec.ID, InLibrary: true}))
+}
+
 func (h *handlers) rate(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r)
 	if err != nil {

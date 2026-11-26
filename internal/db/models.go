@@ -222,6 +222,7 @@ type Recipe struct {
 	ParentRecipeID uuid.NullUUID
 	MealType       string
 	TitleKey       string
+	InLibrary      bool
 }
 
 type RecipeDraft struct {

@@ -187,7 +187,7 @@ func (s *Service) saveOwnRecipe(ctx context.Context, sc domain.Scope, r domain.M
 	if err != nil {
 		return domain.Recipe{}, err
 	}
-	return domain.Recipe{ID: row.ID, Source: source, CreatedAt: row.CreatedAt}, nil
+	return domain.Recipe{ID: row.ID, Source: source, CreatedAt: row.CreatedAt, InLibrary: row.InLibrary}, nil
 }
 
 // CleanRecipe validates a recipe written or checked by a person and fills

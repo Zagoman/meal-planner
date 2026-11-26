@@ -204,6 +204,9 @@ func (Unimplemented) DiscardImport(context.Context, domain.Scope, uuid.UUID) err
 func (Unimplemented) SaveImport(context.Context, domain.Scope, uuid.UUID, domain.MealJSON) (domain.Recipe, error) {
 	return domain.Recipe{}, errNI
 }
+func (Unimplemented) SaveMeal(context.Context, domain.Scope, uuid.UUID) (domain.Recipe, error) {
+	return domain.Recipe{}, errNI
+}
 func (Unimplemented) CreateRecipe(context.Context, domain.Scope, domain.MealJSON) (domain.Recipe, error) {
 	return domain.Recipe{}, errNI
 }
