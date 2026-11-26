@@ -180,6 +180,10 @@ type Households interface {
 	Create(ctx context.Context, s domain.Scope, name, adminEmail string) (domain.Household, error)
 	Members(ctx context.Context, s domain.Scope) ([]domain.Member, error)
 	Memberships(ctx context.Context, s domain.Scope) ([]domain.Membership, error)
+	// SetMyName sets the signed-in member's own name (s.MemberID; never
+	// another member's). A scope whose member is not in s.HouseholdID is
+	// domain.ErrNotFound.
+	SetMyName(ctx context.Context, s domain.Scope, name string) (domain.Member, error)
 	// CreateInvite returns an invite whose Token/URL is shown once. Household admin only.
 	CreateInvite(ctx context.Context, s domain.Scope, role domain.Role) (domain.Invite, error)
 	// AcceptInvite adds the member to the invite's household. The token is

@@ -171,6 +171,9 @@ type Querier interface {
 	// A meal marked cooked puts its recipe in the library.
 	SetMealRecipeInLibrary(ctx context.Context, arg SetMealRecipeInLibraryParams) error
 	SetMemberName(ctx context.Context, arg SetMemberNameParams) error
+	// A member renames themself, only through a household they belong to (so
+	// a scope for another household matches nothing).
+	SetOwnMemberName(ctx context.Context, arg SetOwnMemberNameParams) (SetOwnMemberNameRow, error)
 	// The photo is dropped as soon as it has been read.
 	SetRecipeDraftParsed(ctx context.Context, arg SetRecipeDraftParsedParams) error
 	SetRecipeInLibrary(ctx context.Context, arg SetRecipeInLibraryParams) (int64, error)

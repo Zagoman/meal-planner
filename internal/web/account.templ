@@ -118,10 +118,15 @@ templ SetupPage(p domain.Profile) {
 
 // CuisineChips are the cuisines as toggle chips (checkboxes named "cuisine").
 templ CuisineChips(selected []string) {
+	@cuisineChips(selected, nil)
+}
+
+// cuisineChips gives every chip's checkbox attrs (Profile's autosave).
+templ cuisineChips(selected []string, attrs templ.Attributes) {
 	<div class="chips toggles">
 		for _, c := range domain.Cuisines {
 			<label class="chip">
-				<input type="checkbox" name="cuisine" value={ c } checked?={ inStrings(selected, c) }/>
+				<input type="checkbox" name="cuisine" value={ c } checked?={ inStrings(selected, c) } { attrs... }/>
 				{ c }
 			</label>
 		}
@@ -159,7 +164,15 @@ templ HouseholdMembers(v householdView) {
 		<ul class="members">
 			for _, m := range v.Members {
 				<li>
-					<span class="name">{ m.Name }</span>
+					if m.ID == v.Scope.MemberID && m.Name == "" {
+						<form class="row name-form" action="/profile/name" method="post" hx-post="/profile/name" hx-target="#household" hx-swap="outerHTML" hx-disinherit="*">
+							<label class="visually-hidden" for="my-name">Add your name</label>
+							<input id="my-name" name="name" required maxlength="100" placeholder="Add your name" autocomplete="given-name"/>
+							<button type="submit" class="small-btn">Save</button>
+						</form>
+					} else {
+						<span class="name">{ memberName(m) }</span>
+					}
 					<span class="muted small">{ m.Email }</span>
 					if m.Role == domain.RoleAdmin {
 						<span class="tag">admin</span>

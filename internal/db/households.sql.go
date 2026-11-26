@@ -689,6 +689,34 @@ func (q *Queries) SetMemberName(ctx context.Context, arg SetMemberNameParams) er
 	return err
 }
 
+const setOwnMemberName = `-- name: SetOwnMemberName :one
+UPDATE members m SET name = $1
+FROM household_members hm
+WHERE m.id = $2 AND hm.member_id = m.id AND hm.household_id = $3
+RETURNING m.id, m.email, m.name
+`
+
+type SetOwnMemberNameParams struct {
+	Name        string
+	MemberID    uuid.UUID
+	HouseholdID uuid.UUID
+}
+
+type SetOwnMemberNameRow struct {
+	ID    uuid.UUID
+	Email string
+	Name  string
+}
+
+// A member renames themself, only through a household they belong to (so
+// a scope for another household matches nothing).
+func (q *Queries) SetOwnMemberName(ctx context.Context, arg SetOwnMemberNameParams) (SetOwnMemberNameRow, error) {
+	row := q.db.QueryRow(ctx, setOwnMemberName, arg.Name, arg.MemberID, arg.HouseholdID)
+	var i SetOwnMemberNameRow
+	err := row.Scan(&i.ID, &i.Email, &i.Name)
+	return i, err
+}
+
 const setServerAdmin = `-- name: SetServerAdmin :exec
 UPDATE members SET is_server_admin = $2 WHERE id = $1
 `

@@ -105,6 +105,9 @@ func (Unimplemented) Create(context.Context, domain.Scope, string, string) (doma
 func (Unimplemented) Members(context.Context, domain.Scope) ([]domain.Member, error) {
 	return nil, errNI
 }
+func (Unimplemented) SetMyName(context.Context, domain.Scope, string) (domain.Member, error) {
+	return domain.Member{}, errNI
+}
 func (Unimplemented) Memberships(context.Context, domain.Scope) ([]domain.Membership, error) {
 	return nil, errNI
 }

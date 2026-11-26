@@ -6,12 +6,12 @@ var spiceLevels = []domain.SpiceLevel{domain.SpiceNone, domain.SpiceMild, domain
 
 var proteins = []domain.Protein{domain.ProteinChicken, domain.ProteinFish, domain.ProteinVegetarian, domain.ProteinOther}
 
-templ ProfilePage(p domain.Profile, avoid []domain.AvoidItem, sections []domain.Section, pantry []domain.PantryItem, hv householdView) {
+templ ProfilePage(p domain.Profile, errs prefErrors, avoid []domain.AvoidItem, sections []domain.Section, pantry []domain.PantryItem, hv householdView) {
 	@Layout("Profile", TabProfile) {
 		@HouseholdMembers(hv)
 		<section class="card">
 			<h2>Preferences</h2>
-			@PrefsForm(p, false)
+			@PrefsForm(p, false, errs)
 		</section>
 		<section class="card">
 			<h2>Never eat</h2>
@@ -31,77 +31,154 @@ templ ProfilePage(p domain.Profile, avoid []domain.AvoidItem, sections []domain.
 	}
 }
 
-templ PrefsForm(p domain.Profile, saved bool) {
-	<form id="prefs" class="stack" action="/profile" method="post" hx-post="/profile" hx-swap="outerHTML">
+// PrefsForm is Preferences. With JavaScript every field saves on its own
+// (autosave, POST /profile with field=<name>); the Save button is only
+// there without it.
+templ PrefsForm(p domain.Profile, saved bool, errs prefErrors) {
+	<form id="prefs" class="stack" action="/profile" method="post" data-prefs>
 		<fieldset>
 			<legend>Meals per week</legend>
 			<div class="row">
 				for _, t := range domain.PlannedMealTypes {
-					<label>
-						{ t.Label() }
-						<input type="number" inputmode="numeric" name={ "meals_" + string(t) } min="0" max="14" required value={ itoa(p.MealTargets[t]) }/>
-					</label>
+					<div class="field">
+						<label>
+							{ t.Label() }
+							<input type="number" inputmode="numeric" name={ "meals_" + string(t) } min="0" max="14" required value={ itoa(p.MealTargets[t]) } { autosave("meals_"+string(t), true, errs)... }/>
+						</label>
+						@fieldError("meals_"+string(t), errs, false)
+					</div>
 				}
 			</div>
 		</fieldset>
-		<label>
-			People
-			<input type="number" inputmode="numeric" name="people" min="1" max="12" required value={ itoa(p.People) }/>
-		</label>
+		<div class="field">
+			<label>
+				People
+				<input type="number" inputmode="numeric" name="people" min="1" max="12" required value={ itoa(p.People) } { autosave("people", true, errs)... }/>
+			</label>
+			@fieldError("people", errs, false)
+		</div>
 		<fieldset>
-			<legend>Dinners per week by protein</legend>
+			<legend>Dinners per week by protein (optional)</legend>
 			<div class="row">
 				for _, pr := range proteins {
 					<label>
-						{ string(pr) }
-						<input type="number" name={ "protein_" + string(pr) } min="0" max="7" value={ itoa(p.ProteinMix[pr]) }/>
+						{ capitalize(string(pr)) }
+						<input type="number" inputmode="numeric" name={ "protein_" + string(pr) } min="0" max="7" placeholder="0" value={ blankZero(p.ProteinMix[pr]) } data-protein { autosave("protein", true, errs)... } aria-describedby="protein-help err-protein"/>
 					</label>
 				}
 			</div>
+			@proteinHelpLine(p, false)
+			@fieldError("protein", errs, false)
 		</fieldset>
-		<label>
-			Spice
-			<select name="spice_level">
-				for _, s := range spiceLevels {
-					<option value={ string(s) } selected?={ s == p.SpiceLevel }>{ string(s) }</option>
-				}
-			</select>
-		</label>
-		<label class="check"><input type="checkbox" name="one_pot" value="on" checked?={ p.OnePot }/> One-pot meals only</label>
-		<label class="check"><input type="checkbox" name="baby_portions" value="on" checked?={ p.BabyPortions }/> Take out a baby portion before salt, stock and cheese</label>
-		<fieldset class="plain">
-			<legend>Cuisines you love</legend>
-			@CuisineChips(p.Cuisines)
-		</fieldset>
-		<div class="row">
+		<div class="field">
 			<label>
-				Shop
-				<input name="shop" maxlength="100" value={ p.Shop }/>
-			</label>
-			<label>
-				Shopping day
-				<select name="shopping_day">
-					for _, d := range domain.Weekdays {
-						<option value={ string(d) } selected?={ d == p.ShoppingDay }>{ dayName(d) }</option>
+				Spice
+				<select name="spice_level" { autosave("spice_level", false, errs)... }>
+					for _, s := range spiceLevels {
+						<option value={ string(s) } selected?={ s == p.SpiceLevel }>{ capitalize(string(s)) }</option>
 					}
 				</select>
 			</label>
+			@fieldError("spice_level", errs, false)
+		</div>
+		<div class="field">
+			<label class="check"><input type="checkbox" name="one_pot" value="on" checked?={ p.OnePot } { autosave("one_pot", false, errs)... }/> One-pot meals only</label>
+			@fieldError("one_pot", errs, false)
+		</div>
+		<div class="field">
+			<label class="check"><input type="checkbox" name="baby_portions" value="on" checked?={ p.BabyPortions } { autosave("baby_portions", false, errs)... }/> Take out a baby portion before salt, stock and cheese</label>
+			@fieldError("baby_portions", errs, false)
+		</div>
+		<fieldset class="plain">
+			<legend>Cuisines you love</legend>
+			@cuisineChips(p.Cuisines, autosave("cuisine", false, errs))
+			@fieldError("cuisine", errs, false)
+		</fieldset>
+		<div class="row">
+			<div class="field">
+				<label>
+					Shop
+					<input name="shop" maxlength="100" value={ p.Shop } { autosave("shop", false, errs)... }/>
+				</label>
+				@fieldError("shop", errs, false)
+			</div>
+			<div class="field">
+				<label>
+					Shopping day
+					<select name="shopping_day" { autosave("shopping_day", false, errs)... }>
+						for _, d := range domain.Weekdays {
+							<option value={ string(d) } selected?={ d == p.ShoppingDay }>{ dayName(d) }</option>
+						}
+					</select>
+				</label>
+				@fieldError("shopping_day", errs, false)
+			</div>
+			<div class="field">
+				<label>
+					Plan confirms at
+					<input type="time" name="auto_confirm_time" required value={ p.AutoConfirmTime } { autosave("auto_confirm_time", false, errs)... }/>
+				</label>
+				@fieldError("auto_confirm_time", errs, false)
+			</div>
+		</div>
+		<div class="field">
 			<label>
-				Plan confirms at
-				<input type="time" name="auto_confirm_time" required value={ p.AutoConfirmTime }/>
+				Recipe language
+				<select name="language" { autosave("language", false, errs)... }>
+					for _, l := range languages {
+						<option value={ l.Code } selected?={ l.Code == p.Language }>{ l.Name }</option>
+					}
+					if p.Language != "" && !knownLanguage(p.Language) {
+						<option value={ p.Language } selected>{ p.Language }</option>
+					}
+				</select>
 			</label>
+			@fieldError("language", errs, false)
 		</div>
-		<label>
-			Recipe language
-			<input name="language" maxlength="20" value={ p.Language } placeholder="en"/>
-		</label>
-		<div class="row end">
-			if saved {
-				<span class="saved" role="status">Saved ✓</span>
-			}
-			<button type="submit">Save preferences</button>
-		</div>
+		@fieldError("", errs, false)
+		if saved {
+			<p class="saved" role="status">Saved ✓</p>
+		}
+		<noscript>
+			<div class="row end">
+				<button type="submit">Save preferences</button>
+			</div>
+		</noscript>
 	</form>
+}
+
+// fieldError is the line under a field that says why it didn't save. It
+// is always there (empty when fine) so a save can fill or clear it.
+templ fieldError(field string, errs prefErrors, oob bool) {
+	<p id={ "err-" + fieldOrForm(field) } class="field-error" { oobAttr(oob)... }>
+		for i, m := range errs[field] {
+			if i > 0 {
+				{ " " }
+			}
+			{ m }
+		}
+	</p>
+}
+
+templ proteinHelpLine(p domain.Profile, oob bool) {
+	<p id="protein-help" class="muted small" { oobAttr(oob)... }>{ proteinHelp(p) }</p>
+}
+
+// PrefFieldResult answers a per-field save: "Saved" (or "Not saved") in
+// #flash and the field's error line, out of band; nothing else is swapped,
+// so what is being typed stays.
+templ PrefFieldResult(field string, p domain.Profile, errs prefErrors) {
+	<div id="flash" hx-swap-oob="innerHTML">
+		if len(errs) == 0 {
+			<div class="flash ok quiet"><p>Saved</p></div>
+		} else {
+			<div class="flash error"><p>Not saved. The reason is under the field.</p></div>
+		}
+	</div>
+	@fieldError(field, errs, true)
+	if field == "protein" || field == "meals_"+string(domain.MealDinner) {
+		@proteinHelpLine(p, true)
+	}
 }
 
 templ SectionsList(sections []domain.Section) {

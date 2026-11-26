@@ -62,7 +62,12 @@ label.check { display: flex; gap: var(--space-2); align-items: center; min-heigh
 fieldset { border: 1px solid var(--line); border-radius: var(--radius-md); margin: 0; padding: var(--space-2) var(--space-3) var(--space-3); }
 .stack { display: grid; gap: var(--space-3); }
 .row { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: end; }
-.row > label { flex: 1 1 8rem; }
+.row > label, .row > .field { flex: 1 1 8rem; }
+.field-error { margin: var(--space-1) 0 0; font-size: 14px; line-height: 20px; color: var(--danger-ink); }
+.field-error:empty { display: none; }
+[aria-invalid="true"] { border-color: var(--danger-ink); }
+.name-form { flex: 1 1 12rem; gap: var(--space-2); align-items: center; }
+.name-form input { flex: 1 1 8rem; min-width: 0; margin: 0; }
 .row.end { justify-content: flex-end; align-items: center; }
 .card { background: var(--surface-raised); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-4); margin-bottom: var(--space-4); }
 .tag { display: inline-flex; align-items: center; font: 600 12px/18px var(--font-sans); border-radius: var(--radius-pill); padding: 2px 10px; background: var(--surface-sunken); color: var(--ink); white-space: nowrap; }
