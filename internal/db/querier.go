@@ -158,6 +158,9 @@ type Querier interface {
 	SetMealPosition(ctx context.Context, arg SetMealPositionParams) error
 	SetMealRecipe(ctx context.Context, arg SetMealRecipeParams) error
 	SetMemberName(ctx context.Context, arg SetMemberNameParams) error
+	// A member renames themself, only through a household they belong to (so
+	// a scope for another household matches nothing).
+	SetOwnMemberName(ctx context.Context, arg SetOwnMemberNameParams) (SetOwnMemberNameRow, error)
 	// The photo is dropped as soon as it has been read.
 	SetRecipeDraftParsed(ctx context.Context, arg SetRecipeDraftParsedParams) error
 	SetServerAdmin(ctx context.Context, arg SetServerAdminParams) error

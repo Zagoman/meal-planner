@@ -175,6 +175,26 @@ func (s *Service) Members(ctx context.Context, sc domain.Scope) ([]domain.Member
 	return out, nil
 }
 
+// SetMyName sets the scope's own member name, 1 to 100 characters.
+func (s *Service) SetMyName(ctx context.Context, sc domain.Scope, name string) (domain.Member, error) {
+	name = strings.Join(strings.Fields(name), " ")
+	if name == "" || len(name) > maxText {
+		return domain.Member{}, &domain.ValidationError{Problems: []string{"name: 1 to 100 characters"}}
+	}
+	m, err := s.q.SetOwnMemberName(ctx, db.SetOwnMemberNameParams{Name: name, MemberID: sc.MemberID, HouseholdID: sc.HouseholdID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Member{}, fmt.Errorf("set name: %w", domain.ErrNotFound)
+	}
+	if err != nil {
+		return domain.Member{}, fmt.Errorf("set name: %w", err)
+	}
+	hm, err := s.q.GetMembership(ctx, db.GetMembershipParams{HouseholdID: sc.HouseholdID, MemberID: sc.MemberID})
+	if err != nil {
+		return domain.Member{}, fmt.Errorf("set name: %w", err)
+	}
+	return domain.Member{ID: m.ID, Email: m.Email, Name: m.Name, Role: domain.Role(hm.Role)}, nil
+}
+
 func (s *Service) Memberships(ctx context.Context, sc domain.Scope) ([]domain.Membership, error) {
 	rows, err := s.q.ListMemberHouseholds(ctx, sc.MemberID)
 	if err != nil {

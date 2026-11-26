@@ -22,7 +22,7 @@ templ HouseholdPage(v householdView) {
 			<ul class="members">
 				for _, m := range v.Members {
 					<li>
-						<span class="name">{ m.Name }</span>
+						<span class="name">{ memberName(m) }</span>
 						<span class="muted small">{ m.Email }</span>
 						if m.Role == domain.RoleAdmin {
 							<span class="tag">admin</span>

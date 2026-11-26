@@ -165,6 +165,7 @@ func Routes(d app.Deps) http.Handler {
 		r.Post("/plans/next/meals", h.addDraftMeal)
 		r.Get("/profile", h.profilePage)
 		r.Post("/profile", h.saveProfile)
+		r.Post("/profile/name", h.saveName)
 		r.Post("/profile/sections/move", h.moveSection)
 		r.Post("/profile/pantry", h.savePantry)
 		r.Post("/profile/avoid", h.addAvoid)

@@ -185,6 +185,9 @@ func cleanProfile(p domain.Profile) (domain.Profile, error) {
 		mix[k] = v
 	}
 	p.ProteinMix = mix
+	if set, dinners := proteinTotal(mix), p.MealTargets[domain.MealDinner]; set > dinners {
+		problems = append(problems, fmt.Sprintf("protein_mix: the protein split adds up to %d dinners, more than the %d dinners a week", set, dinners))
+	}
 	avoid, avoidProblems := cleanAvoid(p.Avoid)
 	problems = append(problems, avoidProblems...)
 	p.Avoid = avoid
@@ -203,6 +206,14 @@ func cleanProfile(p domain.Profile) (domain.Profile, error) {
 		return domain.Profile{}, &domain.ValidationError{Problems: problems}
 	}
 	return p, nil
+}
+
+func proteinTotal(mix map[domain.Protein]int) int {
+	n := 0
+	for _, v := range mix {
+		n += v
+	}
+	return n
 }
 
 func cleanAvoid(in []string) ([]string, []string) {

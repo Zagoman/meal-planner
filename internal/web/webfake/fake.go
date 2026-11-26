@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -351,6 +352,30 @@ func (s *Store) Members(_ context.Context, sc domain.Scope) ([]domain.Member, er
 	return out, nil
 }
 
+func (s *Store) SetMyName(_ context.Context, sc domain.Scope, name string) (domain.Member, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.hh(sc); err != nil {
+		return domain.Member{}, err
+	}
+	m, ok := s.members[sc.MemberID]
+	if !ok {
+		return domain.Member{}, fmt.Errorf("set name: %w", domain.ErrNotFound)
+	}
+	r, ok := m.roles[sc.HouseholdID]
+	if !ok {
+		return domain.Member{}, fmt.Errorf("set name: %w", domain.ErrNotFound)
+	}
+	name = strings.Join(strings.Fields(name), " ")
+	if name == "" || len(name) > 100 {
+		return domain.Member{}, &domain.ValidationError{Problems: []string{"name: 1 to 100 characters"}}
+	}
+	m.Name = name
+	out := m.Member
+	out.Role = r
+	return out, nil
+}
+
 func (s *Store) Memberships(_ context.Context, sc domain.Scope) ([]domain.Membership, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -431,6 +456,8 @@ func (s *Store) Get(_ context.Context, sc domain.Scope) (domain.Profile, error) 
 
 func (h *household) profileWithAvoid() domain.Profile {
 	p := h.profile
+	// Copies, so a caller changing what it got doesn't change the store.
+	p.MealTargets, p.ProteinMix, p.Cuisines = maps.Clone(p.MealTargets), maps.Clone(p.ProteinMix), slices.Clone(p.Cuisines)
 	p.Avoid = make([]string, len(h.avoid))
 	for i, a := range h.avoid {
 		p.Avoid[i] = a.Name
@@ -460,6 +487,13 @@ func (s *Store) Put(_ context.Context, sc domain.Scope, p domain.Profile) (domai
 	if p.ShoppingDay != "" && !p.ShoppingDay.Valid() {
 		problems = append(problems, "shopping_day: not a weekday")
 	}
+	set := 0
+	for _, n := range p.ProteinMix {
+		set += n
+	}
+	if dinners := p.MealTargets[domain.MealDinner]; set > dinners {
+		problems = append(problems, fmt.Sprintf("protein_mix: the protein split adds up to %d dinners, more than the %d dinners a week", set, dinners))
+	}
 	if len(problems) > 0 {
 		return domain.Profile{}, &domain.ValidationError{Problems: problems}
 	}
@@ -472,6 +506,7 @@ func (s *Store) Put(_ context.Context, sc domain.Scope, p domain.Profile) (domai
 	if p.AutoConfirmTime == "" {
 		p.AutoConfirmTime = "08:00"
 	}
+	p.MealTargets, p.ProteinMix, p.Cuisines = maps.Clone(p.MealTargets), maps.Clone(p.ProteinMix), slices.Clone(p.Cuisines)
 	h.profile = p
 	return h.profileWithAvoid(), nil
 }

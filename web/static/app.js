@@ -307,6 +307,66 @@
     }
   });
 
+  // ---- Profile: preferences save field by field ---------------------------
+  // Each field posts on change (numbers 400 ms after typing). A change not
+  // yet sent when the page is left (or a boosted link swaps it away) is
+  // sent with a keepalive fetch, so leaving straight away keeps it.
+  const dirty = new Map(); // field -> element
+  function proteinHelp(form) {
+    const help = $("#protein-help", form);
+    if (!help) return;
+    const dinnersInput = form.elements.namedItem("meals_dinner");
+    const dinners = parseInt((dinnersInput && dinnersInput.value) || "0", 10) || 0;
+    let set = 0;
+    for (const i of $$("input[data-protein]", form)) set += Math.max(0, parseInt(i.value || "0", 10) || 0);
+    let text = set + " of " + dinners + " dinners set";
+    if (set > dinners) text += " · that's more than there are dinners";
+    else if (set < dinners) text += " · the rest is up to us";
+    help.textContent = text;
+  }
+  document.addEventListener("input", (e) => {
+    const t = e.target;
+    if (!t.matches || !t.matches("[data-autosave]")) return;
+    dirty.set(t.dataset.autosave, t);
+    if (t.form && t.form.matches("[data-prefs]")) proteinHelp(t.form);
+  });
+  function flushAutosave() {
+    for (const [field, el] of dirty) {
+      if (!el.form || !document.body.contains(el)) continue;
+      const body = new URLSearchParams(new FormData(el.form));
+      body.set("field", field);
+      fetch(el.getAttribute("hx-post") || el.form.action, {
+        method: "POST",
+        body,
+        keepalive: true,
+        credentials: "same-origin",
+        headers: { "HX-Request": "true" },
+      }).catch(() => {});
+    }
+    dirty.clear();
+  }
+  document.addEventListener("htmx:beforeRequest", (e) => {
+    const elt = e.detail.elt;
+    if (elt && elt.matches && elt.matches("[data-autosave]")) {
+      dirty.delete(elt.dataset.autosave);
+      return;
+    }
+    if (dirty.size) flushAutosave();
+  });
+  document.addEventListener("htmx:afterRequest", (e) => {
+    // Mark the field invalid while its error line says why it didn't save.
+    const elt = e.detail.elt;
+    if (!elt || !elt.matches || !elt.matches("[data-autosave]") || !elt.form) return;
+    const field = elt.dataset.autosave;
+    const err = document.getElementById("err-" + field);
+    const bad = !!(err && err.textContent.trim());
+    for (const i of $$('[data-autosave="' + field + '"]', elt.form)) {
+      if (bad) i.setAttribute("aria-invalid", "true");
+      else i.removeAttribute("aria-invalid");
+    }
+  });
+  window.addEventListener("pagehide", flushAutosave);
+
   // ---- generate progress ---------------------------------------------------
   let genTimer = null;
   document.addEventListener("htmx:beforeRequest", (e) => {

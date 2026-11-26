@@ -129,3 +129,11 @@ SELECT * FROM household_members WHERE member_id = $1 ORDER BY created_at DESC LI
 -- name: ListMemberEmails :many
 SELECT m.email, m.name FROM household_members hm JOIN members m ON m.id = hm.member_id
 WHERE hm.household_id = $1 ORDER BY hm.created_at;
+
+-- name: SetOwnMemberName :one
+-- A member renames themself, only through a household they belong to (so
+-- a scope for another household matches nothing).
+UPDATE members m SET name = sqlc.arg(name)
+FROM household_members hm
+WHERE m.id = sqlc.arg(member_id) AND hm.member_id = m.id AND hm.household_id = sqlc.arg(household_id)
+RETURNING m.id, m.email, m.name;
