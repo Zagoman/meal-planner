@@ -461,4 +461,11 @@ deviations in its Deviations table.
   (not an image refused, resized, served as JPEG, other household 404,
   remove), the flow test's meal page, the route walk covers the new routes.
 
-**Known issues**: G-42 to G-44 in GAPS.md.
+**Deployed** (design B and C together) 2026-11-26 as `09d1c6b73c40`.
+Dump first: `mealplanner-20261126-200344.dump`. Migrations 7 (`profiles.cuisines`,
+empty for the existing household) and 8 (`recipe_photos`, empty) applied;
+plans, list and library unchanged (1 active, 6 archived, 188 list items,
+29 recipes). The service worker cache stays v3, so a phone may show the old
+stylesheet and script for one more visit before the background refresh.
+
+**Known issues**: G-42 to G-47 in GAPS.md.
