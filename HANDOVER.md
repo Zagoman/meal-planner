@@ -494,3 +494,39 @@ Added to the design handover after the first version: the splash.
 (1 active, 1 draft from the weekly schedule, 6 archived, 188 list items).
 
 **Known issues**: G-48 in GAPS.md.
+
+## Shopping list fixes, round 1 (branch `fix-list-1-4-6`)
+
+From the "Shopping list fixes — dev handoff"
+(https://claude.ai/artifact/1b8ttNNdHmXVC3yg6MRbGL), 8 items. Round 1 built
+1, 4 and 6 here and 7 and 8 in parallel sessions (branches
+`feat/fix-7-library-20cc1d`, `feat/fix-8-profile-9d4eef`), merged here.
+
+**Built**
+
+- #1 Ticked items sink to the end of their section (sort in
+  `shopping.Group`); a tick answers with the re-sorted section and the
+  progress out of band; a fully ticked section folds to "All in basket";
+  focus stays on the item across the live update; "Dill in basket" is
+  announced.
+- #4 The add form sits under the progress line with `hx-preserve`, so a
+  live update never wipes what someone is typing; a "+" in the corner
+  brings it back once it is out of view.
+- #6 "Clear N ticked" (and "Done shopping" when all are in the basket)
+  soft-deletes the ticked items to buy (migration `00009`: `cleared_at`,
+  `cleared_batch`), with an Undo toast for 8 s; a rebuild keeps them off.
+  `Lists.ClearChecked/UndoClear`, `POST /list/clear` and `/list/clear/undo`.
+- #7 Only recipes the family cooked, saved or added are in Recipes
+  (migration `00010`: `recipes.in_library`, back-filled; nothing deleted).
+  "Save to recipes" on the meal page (`POST /meals/{id}/save`). No
+  "Planned" tag; empty filter chips hidden; the planning prompt lists the
+  library's titles and asks to reuse them and not to add default sides.
+- #8 Profile preferences save field by field (the server merges only the
+  changed field), errors under the field, protein helper line and limit,
+  "Add your name" inline (`Households.SetMyName`), recipe language select.
+- Service worker cache v5.
+
+**Deploy note**: migrations 9 and 10 go out together (production is at 8).
+
+**Known issues**: G-49 to G-54 in GAPS.md; the round's deviations are in
+its Deviations table. Still to build: #2, #3, #5 (G-49).

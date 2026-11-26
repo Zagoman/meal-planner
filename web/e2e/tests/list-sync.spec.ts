@@ -96,7 +96,7 @@ test("a tick on one phone shows up live on the other, also after being offline",
   await expect.poll(() => ben.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 10_000 }).toBe(true);
   await ben.reload();
   const cached = await ben.evaluate(async () => {
-    const res = await caches.match("/", { cacheName: "mp-pages-v4" });
+    const res = await caches.match("/", { cacheName: "mp-pages-v5" });
     return res ? res.text() : "";
   });
   expect(cached).toContain("Shopping list");

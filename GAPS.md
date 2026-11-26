@@ -2,7 +2,7 @@
 
 Everything known to be missing, rough or different from the dev handoff
 and from the design handover (Hvad skal vi ha'?; "Found" `DA` is design
-step A, `DB` step B, `DC` step C, `DD` the splash), in one place. Add a row when you find one; move it to **Fixed**
+step A, `DB` step B, `DC` step C, `DD` the splash; `SL` the shopping list fixes handoff), in one place. Add a row when you find one; move it to **Fixed**
 (with the commit) when it is done. `HANDOVER.md` says what each window built; this
 file is the to-do list that outlives the windows.
 
@@ -18,7 +18,6 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | G-2 | Not cooked | The weekly draft is made at 18:00 the evening before shopping day, before the rating step. A meal of that draft can be one the household then marks not cooked. | That meal stays in the draft unless swapped. Later swaps, Ask Claude and drafts avoid it. Rare: Claude has to repeat last week's meal. | On marking a meal not cooked, flag a draft meal with the same recipe ("not cooked last week") on the review page, or swap it at auto-confirm like a thumbs-down. | W3 |
 | G-3 | Rating | Ratings are one per meal for the household (whoever answered last), not one per member. | Two people who disagree overwrite each other. | Per-member outcomes with an average, if wanted. | W3 |
 | G-4 | Rated 1 | A recipe with any rating of 1 is never suggested again, even if it was rated 5 later. | A one-off bad night bans a recipe for good. | Ban on the latest rating, or on an average ≤ 1.5; allow un-banning from the recipe page. | W3 |
-| G-5 | Library | Every meal Claude plans is saved to the library (handoff rule), including drafts nobody confirmed and meals swapped away. There is no way to hide or delete a recipe. | The library fills with meals never cooked. | Sort by cooked/rated first (done), add an "archive" action, or only list recipes that were in a confirmed plan unless searching. | W3 |
 | G-6 | Ask Claude | Meals Claude keeps are matched by meal type and title. If Claude renames a meal it means to keep, the meal is replaced and loses its votes. | Votes vanish after some Ask Claude requests. | Give Claude the meal ids and ask it to return them for kept meals. | W2 |
 | G-7 | Add to this week | Ingredients already on the list are skipped, not merged: if the recipe needs more than the list has, the amount is not raised. | Can under-buy. | Merge amounts with the existing item's quantity (the builder's unit logic). | W3 |
 | G-8 | Time zone | The household time zone (default Europe/Copenhagen) cannot be changed in the UI. | Only matters for households elsewhere. | A select on the Profile page (validated with `time.LoadLocation`). | W2 |
@@ -61,6 +60,12 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | G-46 | Brand | The new look is checked in the preview browser only, not on a phone (fonts, speckle, safe areas, the bar colour, the home-screen icon). | Something may look off on a real device. | Open it on an iPhone and an Android phone; re-add the home-screen app. | DC |
 | G-47 | Test fake | The e2e fake gives a new draft the same week start as the current plan, so both show the same week number in the preview. | Preview and e2e only; the real planner is right. | Start fake drafts on the next shopping day. | DC |
 | G-48 | Splash | The installed app usually starts a new browser session at each launch, so the 2.5 s splash shows every time it is opened from the home screen (the app loads behind it). | A short wait on each open. | If it feels slow, keep the "seen" mark for a few hours in `localStorage` instead of per session. | DD |
+| G-49 | List | Shopping list fixes handoff #2 (pantry staples to Check at home: seeded pantry, nudge card, Buy into the aisle with a buy unit, pantry as chips), #3 (canonical ingredients, aliases, plural names, one quantity format) and #5 (guess the section when adding) are not built yet. | Teaspoon amounts still show as things to buy; "need 4" without a unit; hand-added items default to Other. | Next round: #2, then #3, then #5 (it builds on #3). | SL |
+| G-50 | Library | A planned meal that reuses a library title keeps the newly planned ingredients, not the library recipe's. | The library version and the week's version can differ. | Copy the library recipe into the meal when the title matches. | SL |
+| G-51 | Library | Clearing a "cooked" rating doesn't take the recipe back out of the library. | A mistaken tap leaves it in Recipes. | Fine; remove it from the library by hand if needed (no UI for that yet). | SL |
+| G-52 | Profile | There is no API endpoint for setting your own name (web only); no Playwright test covers Profile autosave (Go tests and a browser check do). | API clients can't set names; autosave is less guarded. | Add `PUT /api/me` and an e2e spec. | SL |
+| G-53 | Profile | A household whose saved protein split is already above its dinners must lower the split before Dinner can be lowered. | One extra step for an old inconsistent profile. | Clamp the split when Dinner goes down. | SL |
+| G-54 | Tests | The real-services isolation test of `/list/stream` timed out once under full parallel load (passed on re-run). | A flaky CI failure now and then. | Give the SSE check a longer deadline or run it alone. | SL |
 
 ### Later (the design handover says not yet)
 
@@ -115,6 +120,13 @@ is "Don't build yet" in `CLAUDE.md`.
 | Dish type (design) | a recipe's dish type picks its drawing | worked out from the meal (`domain.DishTypeOf`), not stored or asked of the AI | No change to the meal schema or the prompt; good enough for six drawings. |
 | Photo upload (design) | "Add your photo" secondary button | the button opens the camera or library and uploads at once (no-JS: an Upload button); "Remove photo" is a link | One tap, like the recipe import. |
 | Splash (design) | the markup and an inline script first in `<body>` on every page | rendered only on full page loads (not htmx or boosted responses), removed after it fades; `sessionStorage` guarded for private mode | A boosted link swaps the whole body, so the splash would otherwise come back on every page change. |
+| Ticked items (shopping list fixes #1) | design handover: ticked items "stay in place", sections "never collapse during a trip" | ticked items sink to the end of their section; a fully ticked section folds to "All in basket" (tap to open) | The newer shopping list handoff (26 Nov) reverses the design handover after a review in the shop. |
+| Tick announcement (#1) | announce in `#flash` | announced in the hidden `#announce` live region | `#flash` is a visible message box; a tick shouldn't flash one. |
+| All in the basket (#6) | "All 24 in the basket" | the design handover's "All ticked. Go home, nobody's checking." with the primary "Done shopping" under it; "Nothing left to buy." once cleared | Keeps the brand's copy for that state. |
+| Library back-fill (#7) | cooked or your own | also tweaked versions and link imports | They are things the family made on purpose. |
+| Profile autosave (#8) | `change` on every field (numbers with a delay) | numbers save on `input changed delay:400ms`; only the changed field is merged on the server; an unsent change is sent (keepalive) when leaving the page | A typed number saves without leaving the field, and one field can't overwrite another. |
+| Protein split (#8) | server rejects a total above dinners | also refuses lowering Dinner below the current split (error under Dinner) | No silent change to another field. |
+| Members without a name (#8) | "Add your name" for you | others without a name show the start of their email | Every row has a name. |
 
 ## Fixed
 
@@ -138,6 +150,11 @@ is "Don't build yet" in `CLAUDE.md`.
 | G-37 | A new or failed plan arriving over SSE is announced (`#announce`); a page change moves focus to its title. | design B (before commit) |
 | G-38 | One primary button per screen: the cook-mode timer, rating saves and Profile's secondary forms are secondary. | design B (before commit) |
 | G-36 | Recipes show the line drawing for their dish type (worked out from the meal) until the family adds a photo; "Add your photo" on the meal and recipe pages, stored resized in `recipe_photos` (migration 00008), served only to the household, removable. | design C (before commit) |
+| G-5 | Only recipes the family cooked, saved ("Save to recipes" on the meal page) or added are in the library (`recipes.in_library`, migration 00010); planned meals still link to recipes. | shopping list fix #7 |
+| — | Shopping list fix #1: ticked items sink, finished sections fold, focus stays on the ticked item. | shopping list fixes (before commit) |
+| — | Shopping list fix #4: the add form is under the progress line (kept across live updates), with a "+" when out of view. | shopping list fixes (before commit) |
+| — | Shopping list fix #6: "Clear N ticked" / "Done shopping" with Undo (migration 00009, soft delete by batch). | shopping list fixes (before commit) |
+| — | Shopping list fix #8: Profile preferences save field by field; errors under the field; protein helper and limit; your name inline; recipe language as a select. | shopping list fix #8 |
 | — | The homelab email patch and `deploy/README.md` still sent email as "Meal Planner" (the app's own default was renamed). | design C (before commit) |
 | — | Week numbers used the plan's first day, so a week starting on Sunday got the previous ISO week (the email said week 48 for a week that is mostly week 49). `domain.WeekNumber` counts from mid-week. | design B (before commit) |
 | — | A timeout during the database reads of a plan generation was not reported as a generation failure (`domain.ErrGeneration`); `TestGenerateClaudeErrorAndTimeout` failed now and then on `main`. | design B (before commit) |
