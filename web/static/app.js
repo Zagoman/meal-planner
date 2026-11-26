@@ -151,12 +151,7 @@
           // Done, or the item is gone (404 after a rebuild): drop it.
           await dropTick(entry);
           const isLast = !queue.some((e) => e.itemId === entry.itemId);
-          const li = document.getElementById("item-" + entry.itemId);
-          if (li && res.ok && isLast) {
-            li.outerHTML = await res.text();
-            const fresh = document.getElementById("item-" + entry.itemId);
-            if (fresh && window.htmx) htmx.process(fresh);
-          }
+          if (res.ok && isLast) swapByID(await res.text());
         } else {
           return; // server trouble: try again later
         }
@@ -164,6 +159,21 @@
       setOffline(false);
     } finally {
       replaying = false;
+    }
+  }
+
+  // swapByID puts each top-level element of an HTML answer in place of the
+  // element with the same id (the tick answer: the re-sorted section and
+  // the progress), as htmx would for the target and out-of-band parts.
+  function swapByID(html) {
+    const t = document.createElement("template");
+    t.innerHTML = html;
+    for (const el of [...t.content.children]) {
+      el.removeAttribute("hx-swap-oob");
+      const old = el.id && document.getElementById(el.id);
+      if (!old) continue;
+      old.replaceWith(el);
+      if (window.htmx) htmx.process(el);
     }
   }
 
@@ -209,6 +219,56 @@
       queueTick(elt.dataset.itemId, elt.dataset.checked !== "true");
     }
   });
+  // ---- list: focus and announce after a tick (#1) ------------------------------
+  // The tick answer replaces the whole section (rows move), and the live
+  // update replaces the whole list right after, so for a few seconds focus is
+  // put back on the same item (or its folded section) after every swap; its
+  // new state is said once in #announce.
+  let refocus = null; // { id, until }
+  document.addEventListener("htmx:beforeRequest", (e) => {
+    const elt = e.detail.elt;
+    if (elt && elt.matches && elt.matches(".tick[data-item-id]")) {
+      const checked = elt.dataset.checked !== "true";
+      refocus = { id: elt.dataset.itemId, until: Date.now() + 3000 };
+      if (elt.dataset.name) announce(checked ? `${elt.dataset.name} in basket` : `${elt.dataset.name} back on the list`);
+    }
+  });
+  function restoreFocus() {
+    if (!refocus || Date.now() > refocus.until) return;
+    const a = document.activeElement;
+    if (a && a !== document.body && a.isConnected && !(a.matches && a.matches(".tick"))) return; // they moved on
+    const btn = document.querySelector(`.tick[data-item-id="${refocus.id}"]`);
+    if (!btn) return;
+    const closed = btn.closest("details:not([open])");
+    (closed ? closed.querySelector("summary") : btn).focus({ preventScroll: true });
+  }
+  document.addEventListener("htmx:afterSettle", restoreFocus);
+  document.addEventListener("htmx:sseMessage", () => setTimeout(restoreFocus, 0));
+
+  // ---- list: the "+" in the corner once the add form is out of view (#4) ------
+  function watchAddForm() {
+    const form = $("#add-item");
+    const jump = $("#add-jump");
+    if (!form || !jump || !("IntersectionObserver" in window) || jump.dataset.watching) return;
+    jump.dataset.watching = "1";
+    new IntersectionObserver(([en]) => { jump.hidden = en.isIntersecting; }).observe(form);
+    jump.addEventListener("click", () => {
+      const input = $("#add-name");
+      form.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      if (input) input.focus({ preventScroll: true });
+    });
+  }
+  document.addEventListener("DOMContentLoaded", watchAddForm);
+  document.addEventListener("htmx:afterSettle", watchAddForm);
+
+  // ---- toasts that close themselves (Clear ticked · Undo) --------------------------
+  document.addEventListener("htmx:afterSettle", () => {
+    for (const t of document.querySelectorAll("[data-autoclose]:not([data-closing])")) {
+      t.dataset.closing = "1";
+      setTimeout(() => t.remove(), Number(t.dataset.autoclose) || 8000);
+    }
+  });
+
   // ---- announcements ---------------------------------------------------------
   // Content that changes under the reader (a new plan arriving over SSE) is
   // announced in #announce; a boosted page change moves focus to its title.

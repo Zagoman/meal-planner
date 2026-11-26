@@ -263,7 +263,17 @@ func Group(planID uuid.UUID, items []domain.ListItem, sections []domain.Section)
 	})
 	for _, k := range keys {
 		ls := byKey[k]
-		slices.SortStableFunc(ls.Items, byName)
+		// Shopping list fixes #1: items in the basket sink to the end of
+		// their section, so what is left to buy stays on top.
+		slices.SortStableFunc(ls.Items, func(a, b domain.ListItem) int {
+			if a.Checked != b.Checked {
+				if a.Checked {
+					return 1
+				}
+				return -1
+			}
+			return byName(a, b)
+		})
 		list.Sections = append(list.Sections, *ls)
 	}
 	return list

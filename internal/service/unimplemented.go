@@ -218,3 +218,9 @@ func (Unimplemented) PhotoAt(context.Context, domain.Scope, uuid.UUID) (*time.Ti
 	return nil, errNI
 }
 func (Unimplemented) DeletePhoto(context.Context, domain.Scope, uuid.UUID) error { return errNI }
+func (Unimplemented) ClearChecked(context.Context, domain.Scope) (uuid.UUID, int, error) {
+	return uuid.Nil, 0, errNI
+}
+func (Unimplemented) UndoClear(context.Context, domain.Scope, uuid.UUID) (int, error) {
+	return 0, errNI
+}

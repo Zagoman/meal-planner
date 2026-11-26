@@ -102,3 +102,43 @@ test("a tick on one phone shows up live on the other, also after being offline",
   expect(cached).toContain("Shopping list");
   expect(cached).toMatch(/class="item checked"><button[^>]*>.*?<span class="name">potato</s);
 });
+
+test("ticked items sink, focus stays, typing survives a live update, clear and undo", async ({ browser }) => {
+  const anna = await login(browser, "anna@example.test", "block");
+  const ben = await login(browser, "ben@example.test", "block");
+
+  // Anna starts typing; Ben ticks something; Anna's text survives the live update.
+  await anna.locator("#add-name").fill("oat milk");
+  const firstSection = anna.locator("#list section.sec").first();
+  const names = await firstSection.locator(".item .name").allInnerTexts();
+  await item(ben, names[1]).locator(".tick").click();
+  await expect(item(anna, names[1])).toHaveClass(/checked/, { timeout: 3_000 });
+  await expect(anna.locator("#add-name")).toHaveValue("oat milk");
+  await anna.locator("#add-name").fill("");
+
+  // Anna ticks the first item of the section: it moves to the end, focus stays on it.
+  await item(anna, names[0]).locator(".tick").focus();
+  await anna.keyboard.press("Enter");
+  await expect(item(anna, names[0])).toHaveClass(/checked/);
+  // Both ticked items (Ben's and Anna's) are now last, in alphabetical order.
+  const ticked = [names[0], names[1]].sort((a, b) => a.localeCompare(b));
+  await expect(firstSection.locator(".item .name")).toHaveText([...names.slice(2), ...ticked], { timeout: 3_000 });
+  await expect(item(anna, names[0]).locator(".tick")).toBeFocused({ timeout: 3_000 });
+  await expect(anna.locator("#announce")).toContainText(`${names[0]} in basket`);
+
+  // Clear the ticked items, then undo.
+  await anna.locator("#progress").getByRole("button", { name: /Clear \d+ ticked/ }).click();
+  await expect(anna.locator("#flash")).toContainText("items cleared");
+  await expect(item(anna, names[0])).toHaveCount(0);
+  await expect(item(ben, names[0])).toHaveCount(0, { timeout: 3_000 }); // the other phone too
+  await anna.locator("#flash").getByRole("button", { name: "Undo" }).click();
+  await expect(item(anna, names[0])).toHaveClass(/checked/);
+
+  // Scrolled to the bottom, the "+" brings the add field back with focus.
+  await anna.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await anna.setViewportSize({ width: 375, height: 400 });
+  await anna.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await expect(anna.locator("#add-jump")).toBeVisible();
+  await anna.locator("#add-jump").click();
+  await expect(anna.locator("#add-name")).toBeFocused();
+});

@@ -1,5 +1,6 @@
 -- name: ListItemsForPlan :many
-SELECT * FROM list_items WHERE plan_id = $1 AND household_id = $2 ORDER BY created_at, name;
+-- Cleared items (#6, "Clear ticked") are left out; Undo brings them back.
+SELECT * FROM list_items WHERE plan_id = $1 AND household_id = $2 AND cleared_at IS NULL ORDER BY created_at, name;
 
 -- name: GetListItem :one
 SELECT * FROM list_items WHERE id = $1 AND household_id = $2;
@@ -66,3 +67,15 @@ RETURNING *;
 -- An ingredient of a recipe added to this week: a manual item with its amount.
 INSERT INTO list_items (household_id, plan_id, name, normalized_name, qty_text, section, is_manual, added_by)
 VALUES ($1, $2, $3, $4, $5, $6, true, $7) RETURNING *;
+
+-- name: ClearCheckedListItems :many
+-- Items to buy that are in the basket. Check at home items count as to buy
+-- only once answered "Buy" (have_it false), as in domain.ListItem.ToBuy.
+UPDATE list_items SET cleared_at = now(), cleared_batch = sqlc.arg(batch), updated_at = now()
+WHERE household_id = sqlc.arg(household_id) AND plan_id = sqlc.arg(plan_id)
+  AND checked AND cleared_at IS NULL AND (NOT check_home OR have_it = false)
+RETURNING id;
+
+-- name: RestoreClearedListItems :execrows
+UPDATE list_items SET cleared_at = NULL, cleared_batch = NULL, updated_at = now()
+WHERE household_id = $1 AND cleared_batch = $2;

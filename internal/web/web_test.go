@@ -201,19 +201,29 @@ func TestTickReturnsItemPartial(t *testing.T) {
 		t.Fatalf("tick: %d %s", rec.Code, rec.Body)
 	}
 	body := strings.TrimSpace(rec.Body.String())
-	if !strings.HasPrefix(body, `<li id="item-`+it.ID.String()+`" class="item checked">`) || strings.Contains(body, "<html") {
-		t.Errorf("not the item partial: %.300s", body)
+	// Its section comes back (ticked items sink, shopping list fixes #1).
+	if !strings.HasPrefix(body, `<section class="sec`) || !strings.Contains(body, `<li id="item-`+it.ID.String()+`" class="item checked">`) || strings.Contains(body, "<html") {
+		t.Errorf("not the section partial: %.300s", body)
 	}
 	// The next tap posts the opposite state.
 	mustContain(t, "tick", body, `hx-vals="{&#34;checked&#34;:&#34;false&#34;}"`, `aria-pressed="true"`)
-	l, _ := f.store.Active(context.Background(), f.seed.Anna)
-	if !l.Sections[0].Items[0].Checked {
+	ticked := func() bool {
+		l, _ := f.store.Active(context.Background(), f.seed.Anna)
+		for _, sec := range l.Sections {
+			for _, x := range sec.Items {
+				if x.ID == it.ID {
+					return x.Checked
+				}
+			}
+		}
+		return false
+	}
+	if !ticked() {
 		t.Error("not ticked in store")
 	}
 	// Setting (not toggling) makes a replayed offline tick idempotent.
 	f.do(t, req{method: "POST", path: path, form: url.Values{"checked": {"true"}}, session: anna, hx: true})
-	l, _ = f.store.Active(context.Background(), f.seed.Anna)
-	if !l.Sections[0].Items[0].Checked {
+	if !ticked() {
 		t.Error("second identical tick un-ticked")
 	}
 

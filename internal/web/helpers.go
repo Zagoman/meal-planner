@@ -255,3 +255,24 @@ func inStrings(list []string, s string) bool {
 	}
 	return false
 }
+
+// plural picks the singular or plural word for n.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// sectionDone reports whether every item of a shop section is in the basket.
+func sectionDone(sec domain.ListSection) bool {
+	if len(sec.Items) == 0 {
+		return false
+	}
+	for _, it := range sec.Items {
+		if !it.Checked {
+			return false
+		}
+	}
+	return true
+}

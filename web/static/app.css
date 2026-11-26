@@ -415,3 +415,17 @@ input.flag, select.flag, textarea.flag { border-color: var(--warning-ink); backg
 .recipe-pic .drawing { width: 46%; max-width: 180px; height: auto; }
 .pic-actions { display: flex; align-items: center; justify-content: center; gap: var(--space-4); flex-wrap: wrap; }
 .file-label { position: relative; overflow: hidden; }
+
+/* Shopping list fixes: progress row with Clear ticked (#6), folded
+   "All in basket" sections (#1), the "+" once the add form is out of view (#4) */
+.progress-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.progress-row .clear-form button.link { font-size: 14px; }
+.progress .clear-form:last-child { margin-top: var(--space-3); }
+form.add-item { margin: 0 0 var(--space-6); }
+.sec-done .sec-label { color: var(--ink-muted); }
+details.all-in > summary { min-height: var(--tap-target); display: flex; align-items: center; color: var(--ink-muted); font-size: 14px; text-decoration: none; border-bottom: 1px solid var(--line); list-style: none; cursor: pointer; }
+details.all-in > summary::-webkit-details-marker { display: none; }
+details.all-in > summary::after { content: "Show"; margin-left: auto; text-decoration: underline; text-underline-offset: 3px; color: var(--ink); }
+details.all-in[open] > summary::after { content: "Hide"; }
+.add-jump { position: fixed; top: calc(var(--space-3) + env(safe-area-inset-top)); right: var(--space-4); z-index: 11; background: var(--surface-raised); }
+.add-jump[hidden] { display: none; }

@@ -72,6 +72,7 @@ type household struct {
 	importIDs []uuid.UUID   // recipe drafts (imports.go)
 	meals     map[uuid.UUID]domain.Meal
 	items     []domain.ListItem
+	cleared   map[uuid.UUID][]domain.ListItem // ClearChecked batches, for Undo
 	feedback  []domain.Feedback
 	recipes   []domain.Recipe
 	next      int // recipe rotation

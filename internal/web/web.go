@@ -112,6 +112,8 @@ func Routes(d app.Deps) http.Handler {
 		r.Get("/list", h.listPage)
 		r.Get("/list/stream", h.listStream)
 		r.Post("/list/items", h.addItem)
+		r.Post("/list/clear", h.clearTicked)
+		r.Post("/list/clear/undo", h.undoClear)
 		// toggle and check both set the posted state (idempotent for the
 		// offline queue); check is the older name.
 		r.Post("/list/items/{id}/toggle", h.checkItem)

@@ -133,6 +133,12 @@ type Lists interface {
 	// answer. Items not under Check at home are domain.ErrNotFound.
 	SetHaveIt(ctx context.Context, s domain.Scope, itemID uuid.UUID, haveIt *bool) (domain.ListItem, error)
 	DeleteItem(ctx context.Context, s domain.Scope, itemID uuid.UUID) error
+	// ClearChecked hides the items to buy that are in the basket (a soft
+	// delete) and returns the batch to undo and how many it hid. With
+	// nothing ticked it hides nothing.
+	ClearChecked(ctx context.Context, s domain.Scope) (batch uuid.UUID, n int, err error)
+	// UndoClear brings back the items of one ClearChecked batch.
+	UndoClear(ctx context.Context, s domain.Scope, batch uuid.UUID) (int, error)
 }
 
 // Profiles is the household's preferences, shop sections and pantry.

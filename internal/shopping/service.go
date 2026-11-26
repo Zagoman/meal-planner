@@ -187,6 +187,38 @@ func (s *Service) DeleteItem(ctx context.Context, sc domain.Scope, itemID uuid.U
 	return nil
 }
 
+// ClearChecked hides the active list's items that are in the basket.
+func (s *Service) ClearChecked(ctx context.Context, sc domain.Scope) (uuid.UUID, int, error) {
+	q := db.New(s.pool)
+	plan, err := q.GetActivePlan(ctx, sc.HouseholdID)
+	if err != nil {
+		return uuid.Nil, 0, notFound("active plan", err)
+	}
+	batch := uuid.New()
+	ids, err := q.ClearCheckedListItems(ctx, db.ClearCheckedListItemsParams{Batch: uuid.NullUUID{UUID: batch, Valid: true}, HouseholdID: sc.HouseholdID, PlanID: plan.ID})
+	if err != nil {
+		return uuid.Nil, 0, fmt.Errorf("clear ticked: %w", err)
+	}
+	if len(ids) > 0 {
+		s.publish(sc.HouseholdID, events.Event{Kind: events.ListRebuilt})
+	}
+	return batch, len(ids), nil
+}
+
+// UndoClear brings back one ClearChecked batch; another household's batch
+// (or one already undone) is not found.
+func (s *Service) UndoClear(ctx context.Context, sc domain.Scope, batch uuid.UUID) (int, error) {
+	n, err := db.New(s.pool).RestoreClearedListItems(ctx, db.RestoreClearedListItemsParams{HouseholdID: sc.HouseholdID, ClearedBatch: uuid.NullUUID{UUID: batch, Valid: true}})
+	if err != nil {
+		return 0, fmt.Errorf("undo clear: %w", err)
+	}
+	if n == 0 {
+		return 0, fmt.Errorf("undo clear: %w", domain.ErrNotFound)
+	}
+	s.publish(sc.HouseholdID, events.Event{Kind: events.ListRebuilt})
+	return int(n), nil
+}
+
 // RebuildItems recomputes the generated items of a plan inside the caller's
 // transaction: items are upserted by normalized name (ticks survive), stale
 // generated items are removed and manual items are never touched. The caller

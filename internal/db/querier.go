@@ -23,6 +23,9 @@ type Querier interface {
 	BannedRecipeTitles(ctx context.Context, householdID uuid.UUID) ([]BannedRecipeTitlesRow, error)
 	// Takes the oldest due job; concurrent workers skip each other's rows.
 	ClaimJob(ctx context.Context) (Job, error)
+	// Items to buy that are in the basket. Check at home items count as to buy
+	// only once answered "Buy" (have_it false), as in domain.ListItem.ToBuy.
+	ClearCheckedListItems(ctx context.Context, arg ClearCheckedListItemsParams) ([]uuid.UUID, error)
 	ConfirmDraftPlan(ctx context.Context, arg ConfirmDraftPlanParams) (int64, error)
 	CountClaudeMeals(ctx context.Context, arg CountClaudeMealsParams) (int64, error)
 	CountMeals(ctx context.Context, arg CountMealsParams) (int64, error)
@@ -113,6 +116,7 @@ type Querier interface {
 	ListIngredientsForMeal(ctx context.Context, arg ListIngredientsForMealParams) ([]Ingredient, error)
 	ListIngredientsForPlan(ctx context.Context, arg ListIngredientsForPlanParams) ([]Ingredient, error)
 	ListInvites(ctx context.Context, householdID uuid.UUID) ([]Invite, error)
+	// Cleared items (#6, "Clear ticked") are left out; Undo brings them back.
 	ListItemsForPlan(ctx context.Context, arg ListItemsForPlanParams) ([]ListItem, error)
 	// Suggested day (meals without one last), then meal type, then position.
 	ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error)
@@ -145,6 +149,7 @@ type Querier interface {
 	ReplaceMealContent(ctx context.Context, arg ReplaceMealContentParams) (int64, error)
 	// A job stopped by a shutdown goes back in the queue.
 	RequeueJob(ctx context.Context, id uuid.UUID) error
+	RestoreClearedListItems(ctx context.Context, arg RestoreClearedListItemsParams) (int64, error)
 	RevokeAPIToken(ctx context.Context, arg RevokeAPITokenParams) error
 	// The library with ratings: q matches the title or an ingredient.
 	SearchRecipes(ctx context.Context, arg SearchRecipesParams) ([]SearchRecipesRow, error)

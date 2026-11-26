@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
@@ -79,7 +80,70 @@ func (h *handlers) checkItem(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/list")
 		return
 	}
-	h.render(w, r, http.StatusOK, Item(it))
+	// The item's section comes back re-sorted (ticked items sink, #1) with
+	// the progress out of band. An item no longer in a section (cleared, or
+	// a Check at home item) answers with the whole list instead.
+	l, err := h.svc.Lists.Active(r.Context(), scope(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	for _, sec := range l.Sections {
+		for _, x := range sec.Items {
+			if x.ID == it.ID {
+				h.render(w, r, http.StatusOK, tickSwap(sec, l))
+				return
+			}
+		}
+	}
+	w.Header().Set("HX-Retarget", "#list")
+	w.Header().Set("HX-Reswap", "innerHTML")
+	h.renderListBody(w, r)
+}
+
+// clearTicked is POST /list/clear (#6): the ticked items to buy leave the
+// list (soft delete); the answer is the list plus an Undo toast.
+func (h *handlers) clearTicked(w http.ResponseWriter, r *http.Request) {
+	batch, n, err := h.svc.Lists.ClearChecked(r.Context(), scope(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if !isHX(r) {
+		redirect(w, r, "/list")
+		return
+	}
+	body, ok := h.listBody(w, r)
+	if !ok {
+		return
+	}
+	if n == 0 {
+		h.render(w, r, http.StatusOK, body)
+		return
+	}
+	h.render(w, r, http.StatusOK, templ.Join(body, ClearedToast(n, batch.String())))
+}
+
+// undoClear is POST /list/clear/undo with batch: those items come back.
+func (h *handlers) undoClear(w http.ResponseWriter, r *http.Request) {
+	batch, err := uuid.Parse(r.PostFormValue("batch"))
+	if err != nil {
+		h.fail(w, r, fmt.Errorf("batch: %w", domain.ErrNotFound))
+		return
+	}
+	if _, err := h.svc.Lists.UndoClear(r.Context(), scope(r), batch); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if !isHX(r) {
+		redirect(w, r, "/list")
+		return
+	}
+	body, ok := h.listBody(w, r)
+	if !ok {
+		return
+	}
+	h.render(w, r, http.StatusOK, templ.Join(body, EmptyFlash()))
 }
 
 // haveItem answers a Check at home item: have_it=true (Have it), false
@@ -142,12 +206,25 @@ func (h *handlers) deleteItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) renderListBody(w http.ResponseWriter, r *http.Request) {
-	l, err := h.svc.Lists.Active(r.Context(), scope(r))
+	if body, ok := h.listBody(w, r); ok {
+		h.render(w, r, http.StatusOK, body)
+	}
+}
+
+// listBody loads the active list and the sections (for the add form).
+func (h *handlers) listBody(w http.ResponseWriter, r *http.Request) (templ.Component, bool) {
+	s := scope(r)
+	l, err := h.svc.Lists.Active(r.Context(), s)
 	if err != nil {
 		h.fail(w, r, err)
-		return
+		return nil, false
 	}
-	h.render(w, r, http.StatusOK, ListBody(l))
+	secs, err := h.svc.Profiles.Sections(r.Context(), s)
+	if err != nil {
+		h.fail(w, r, err)
+		return nil, false
+	}
+	return ListBody(l, secs), true
 }
 
 // listStream is the page-side SSE endpoint. It subscribes to the caller's
@@ -175,7 +252,11 @@ func (h *handlers) listStream(w http.ResponseWriter, r *http.Request) {
 		case err != nil:
 			return err
 		default:
-			if err := ListBody(l).Render(r.Context(), &buf); err != nil {
+			secs, err := h.svc.Profiles.Sections(r.Context(), s)
+			if err != nil {
+				return err
+			}
+			if err := ListBody(l, secs).Render(r.Context(), &buf); err != nil {
 				return err
 			}
 		}

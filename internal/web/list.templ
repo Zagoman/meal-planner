@@ -16,19 +16,24 @@ templ ListPage(l domain.List, hasPlan bool, sections []domain.Section) {
 		} else {
 			<div id="list-live" hx-ext="sse" sse-connect="/list/stream">
 				<div id="list" sse-swap="list" hx-swap="innerHTML">
-					@ListBody(l)
+					@ListBody(l, sections)
 				</div>
 			</div>
-			@AddItemForm(sections)
+			<button type="button" id="add-jump" class="icon-btn add-jump" aria-label="Add an item" hidden>
+				@icon("M12 5v14 M5 12h14")
+			</button>
 		}
 	}
 }
 
 // ListBody is the whole list; it is what the SSE stream sends on each
-// change. Each part has a stable id (#progress, #check-home,
-// #section-{key}, #item-{id}) so it can be swapped on its own.
-templ ListBody(l domain.List) {
-	@Progress(l)
+// change. Each part has a stable id (#progress, #add-item, #check-home,
+// #section-{key}, #item-{id}) so it can be swapped on its own. The add form
+// sits under the progress (#4) and is kept as it is across swaps
+// (hx-preserve), so a live update never wipes what someone is typing.
+templ ListBody(l domain.List, sections []domain.Section) {
+	@Progress(l, false)
+	@AddItemForm(sections)
 	if len(l.CheckHome) > 0 {
 		@CheckHome(l)
 	}
@@ -37,19 +42,73 @@ templ ListBody(l domain.List) {
 	}
 }
 
-// Progress counts only the items to buy, not Check at home items.
-templ Progress(l domain.List) {
+// Progress counts only the items to buy, not Check at home items. Once
+// something is in the basket it offers to clear the ticked items (#6); when
+// everything is, that becomes the screen's one primary "Done shopping".
+templ Progress(l domain.List, oob bool) {
 	{{ done, total := l.Progress() }}
-	<div id="progress" class="progress" data-done={ itoa(done) } data-total={ itoa(total) }>
-		if total > 0 && done == total {
-			<p class="progress-text list-done">All ticked. Go home, nobody's checking.</p>
-		} else {
-			<p class="progress-text">{ itoa(done) } of { itoa(total) } in the basket</p>
+	<div
+		id="progress"
+		class="progress"
+		data-done={ itoa(done) }
+		data-total={ itoa(total) }
+		if oob {
+			hx-swap-oob="true"
 		}
+	>
+		<div class="progress-row">
+			if total == 0 {
+				<p class="progress-text">Nothing left to buy.</p>
+			} else if done == total {
+				<p class="progress-text list-done">All ticked. Go home, nobody's checking.</p>
+			} else {
+				<p class="progress-text">{ itoa(done) } of { itoa(total) } in the basket</p>
+			}
+			if done > 0 && done < total {
+				@clearForm("link") {
+					Clear { itoa(done) } ticked
+				}
+			}
+		</div>
 		<div class="bar" role="progressbar" aria-label="Shopping progress" aria-valuemin="0" aria-valuemax={ itoa(total) } aria-valuenow={ itoa(done) }>
 			<div class="bar-fill" style={ barStyle(done, total) }></div>
 		</div>
+		if total > 0 && done == total {
+			@clearForm("primary wide") {
+				Done shopping
+			}
+		}
 	</div>
+}
+
+// clearForm posts /list/clear: the ticked items leave the list, with Undo.
+templ clearForm(class string) {
+	<form class="clear-form" action="/list/clear" method="post" hx-post="/list/clear" hx-target="#list" hx-swap="innerHTML">
+		<button type="submit" class={ class }>{ children... }</button>
+	</form>
+}
+
+// ClearedToast says how many items left the list, with Undo for 8 s.
+templ ClearedToast(n int, batch string) {
+	<div id="flash" role="status" aria-live="polite" hx-swap-oob="true">
+		<div class="flash ok toast" data-autoclose="8000">
+			<p>
+				{ itoa(n) } { plural(n, "item", "items") } cleared ·
+				<button type="button" class="link" hx-post="/list/clear/undo" hx-vals={ `{"batch":"` + batch + `"}` } hx-target="#list" hx-swap="innerHTML">Undo</button>
+			</p>
+		</div>
+	</div>
+}
+
+// EmptyFlash clears #flash out of band (after an Undo).
+templ EmptyFlash() {
+	<div id="flash" role="status" aria-live="polite" hx-swap-oob="true"></div>
+}
+
+// tickSwap answers a tick: the item's section, re-sorted, and the progress.
+templ tickSwap(sec domain.ListSection, l domain.List) {
+	@ListSection(sec)
+	@Progress(l, true)
 }
 
 // CheckHome is the card of pantry items at the top: "Have it" hides an item
@@ -95,15 +154,29 @@ templ haveItButton(it domain.ListItem, value bool, label string) {
 	</form>
 }
 
+// ListSection is one shop section: items to buy first, then the ones in the
+// basket (#1). When all are in the basket it folds to "All in basket",
+// which opens on a tap.
 templ ListSection(sec domain.ListSection) {
-	<section class="sec" id={ "section-" + sec.Key }>
+	<section class={ "sec", templ.KV("sec-done", sectionDone(sec)) } id={ "section-" + sec.Key }>
 		<h2 class="sec-label">{ sec.Name }</h2>
-		<ul class="items card">
-			for _, it := range sec.Items {
-				@Item(it)
-			}
-		</ul>
+		if sectionDone(sec) {
+			<details class="all-in">
+				<summary>All in basket · { itoa(len(sec.Items)) }</summary>
+				@sectionItems(sec)
+			</details>
+		} else {
+			@sectionItems(sec)
+		}
 	</section>
+}
+
+templ sectionItems(sec domain.ListSection) {
+	<ul class="items card">
+		for _, it := range sec.Items {
+			@Item(it)
+		}
+	</ul>
 }
 
 // Item is one row; ticking swaps just this element.
@@ -114,9 +187,10 @@ templ Item(it domain.ListItem) {
 			class="tick"
 			hx-post={ "/list/items/" + it.ID.String() + "/toggle" }
 			hx-vals={ checkVals(it) }
-			hx-target="closest li"
+			hx-target="closest section"
 			hx-swap="outerHTML"
 			data-item-id={ it.ID.String() }
+			data-name={ it.Name }
 			data-checked={ strconv.FormatBool(it.Checked) }
 			aria-pressed={ strconv.FormatBool(it.Checked) }
 		>
@@ -141,6 +215,8 @@ templ Item(it domain.ListItem) {
 
 templ AddItemForm(sections []domain.Section) {
 	<form
+		id="add-item"
+		hx-preserve="true"
 		class="add add-item"
 		action="/list/items"
 		method="post"
@@ -157,6 +233,6 @@ templ AddItemForm(sections []domain.Section) {
 				<option value={ s.Key } selected?={ s.Key == "other" }>{ s.Name }</option>
 			}
 		</select>
-		<button type="submit" class="primary">Add</button>
+		<button type="submit" class="secondary-btn">Add</button>
 	</form>
 }

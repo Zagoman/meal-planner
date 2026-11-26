@@ -107,6 +107,8 @@ type ListItem struct {
 	HaveIt         pgtype.Bool
 	AddedBy        uuid.NullUUID
 	TickAt         *time.Time
+	ClearedAt      *time.Time
+	ClearedBatch   uuid.NullUUID
 }
 
 type LoginToken struct {

@@ -238,3 +238,18 @@ func (f *fakePlanner) swappedDay(planID uuid.UUID) domain.Weekday {
 	defer f.mu.Unlock()
 	return f.swapped[planID]
 }
+
+// The JSON API has no clear or undo route; these satisfy service.Lists.
+func (f *fakePlanner) ClearChecked(_ context.Context, s domain.Scope) (uuid.UUID, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("ClearChecked", s)
+	return uuid.Nil, 0, nil
+}
+
+func (f *fakePlanner) UndoClear(_ context.Context, s domain.Scope, _ uuid.UUID) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.record("UndoClear", s)
+	return 0, domain.ErrNotFound
+}
