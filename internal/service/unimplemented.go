@@ -210,3 +210,11 @@ func (Unimplemented) CreateRecipe(context.Context, domain.Scope, domain.MealJSON
 func (Unimplemented) TickAt(context.Context, domain.Scope, uuid.UUID, bool, time.Time) (domain.ListItem, error) {
 	return domain.ListItem{}, errNI
 }
+func (Unimplemented) SetPhoto(context.Context, domain.Scope, uuid.UUID, []byte) error { return errNI }
+func (Unimplemented) Photo(context.Context, domain.Scope, uuid.UUID) (domain.RecipePhoto, error) {
+	return domain.RecipePhoto{}, errNI
+}
+func (Unimplemented) PhotoAt(context.Context, domain.Scope, uuid.UUID) (*time.Time, error) {
+	return nil, errNI
+}
+func (Unimplemented) DeletePhoto(context.Context, domain.Scope, uuid.UUID) error { return errNI }

@@ -153,10 +153,11 @@ func TestSecondHouseholdJoinsAndShops(t *testing.T) {
 	if hdr.Get("Location") != "/setup" {
 		t.Fatalf("not sent to setup: %q", hdr.Get("Location"))
 	}
-	b.expect("GET", "/setup", nil, false, 200, "1 of 4", "4 of 4", "Make our first plan")
+	b.expect("GET", "/setup", nil, false, 200, "1 of 5", "5 of 5 · optional", "help of AI", "Make our first plan")
 	_, hdr = b.expect("POST", "/setup", url.Values{
 		"meals_breakfast": {"0"}, "meals_lunch": {"0"}, "meals_dinner": {"2"}, "meals_baking": {"1"},
 		"people": {"3"}, "avoid": {"coriander, Mushrooms"}, "shopping_day": {"sunday"},
+		"cuisine": {"Italian", "Danish classics"},
 	}, false, 303)
 	if hdr.Get("Location") != "/plans/next" {
 		t.Fatalf("after setup: %q", hdr.Get("Location"))
@@ -166,7 +167,8 @@ func TestSecondHouseholdJoinsAndShops(t *testing.T) {
 		t.Fatal(err)
 	}
 	prompt := fc.Requests[0].Messages[0].Content
-	for _, want := range []string{"2 dinners and 1 baking", "People eating: 3", `"coriander"`, `"Mushrooms"`} {
+	for _, want := range []string{"2 dinners and 1 baking", "People eating: 3", `"coriander"`, `"Mushrooms"`,
+		"Baby portions: no", "Cuisines the family loves (lean on them, but keep variety): Italian, Danish classics"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("first plan prompt lacks %q", want)
 		}
@@ -180,7 +182,7 @@ func TestSecondHouseholdJoinsAndShops(t *testing.T) {
 	}
 
 	// Review and confirm; the list has the meals' ingredients (never water).
-	b.expect("GET", "/plans/next", nil, false, 200, "Chicken traybake", "Confirm week")
+	b.expect("GET", "/plans/next", nil, false, 200, "Chicken traybake", "Confirm plan", "a first guess. Rate it and next week gets better.", "Confirms itself on Sunday at 08:00")
 	b.expect("POST", "/plans/next/confirm", url.Values{}, false, 303)
 	listHTML, _ := b.expect("GET", "/list", nil, false, 200, "Chicken thighs", "Rye flour")
 	if strings.Contains(strings.ToLower(listHTML), ">water<") {
@@ -201,6 +203,12 @@ func TestSecondHouseholdJoinsAndShops(t *testing.T) {
 	}
 	if done, total := list.Progress(); done != total || total != len(ids) {
 		t.Errorf("shop not complete: %d of %d", done, total)
+	}
+
+	// The meal page shows the dish drawing and offers a photo (the meal
+	// knows its library recipe).
+	if bp, err := services.Plans.Current(ctx, domain.Scope{HouseholdID: h.ID}); err == nil && len(bp.Meals) > 0 {
+		b.expect("GET", "/meals/"+bp.Meals[0].ID.String(), nil, false, 200, `class="drawing"`, "Add your photo", `action="/recipes/`)
 	}
 
 	// Household A: every id of B is 404, and A's member gets no B events.

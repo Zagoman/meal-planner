@@ -55,7 +55,14 @@ func (h *handlers) reviewPage(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, http.StatusOK, ReviewPage(rev, s.MemberID, preview))
+	var rate *domain.RateList
+	if l, err := h.svc.Outcomes.RateList(r.Context(), s); err == nil {
+		rate = &l
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		h.fail(w, r, err)
+		return
+	}
+	h.render(w, r, http.StatusOK, ReviewPage(rev, s.MemberID, preview, rate))
 }
 
 // draftMeals is GET /plans/next/meals. When the draft is gone (confirmed on

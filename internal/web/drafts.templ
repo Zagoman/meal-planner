@@ -37,13 +37,9 @@ templ DraftCard(c domain.DraftCard) {
 					}
 					Confirms itself { c.ConfirmsAt.Format("Mon 15:04") }.
 				</p>
-				if c.RateFirst {
-					<a class="button primary" href="/plans/current/rate">Start review</a>
-				} else {
-					<a class="button primary" href="/plans/next">Start review</a>
-				}
+				<a class="button primary" href="/plans/next">Review plan</a>
 			case domain.DraftFailed:
-				<p class="draft-title">Couldn't make the plan.</p>
+				<p class="notice danger" role="alert">We couldn't make a plan just now. Try again in a minute.</p>
 				<p class="small muted">Your current plan is unchanged.</p>
 				@makeDraftForm("Try again")
 			default:
@@ -67,21 +63,31 @@ templ ConfirmNote(p domain.Plan) {
 	}
 }
 
-templ ReviewPage(r domain.Review, me uuid.UUID, preview domain.List) {
+// ReviewPage is the plan screen's one pass (design handover): rate the
+// week that is ending, offer what wasn't cooked, then the draft and
+// Confirm plan. rate is nil when there is no plan to rate.
+templ ReviewPage(r domain.Review, me uuid.UUID, preview domain.List, rate *domain.RateList) {
 	@FullLayout("Next week", "/week", "Week") {
 		<div class="review" hx-ext="sse" sse-connect="/events">
-			<p class="sub small muted">
-				<span class="badge draft">Draft</span>
-				{ mealCount(len(r.Meals)) } · confirms itself { r.ConfirmsAt.Format("Mon 15:04") }
+			<p class="sub eyebrow">
+				Week { itoa(weekNumber(r.Plan.WeekStart)) } · <span class="hsv-chip hsv-chip--warning">Draft</span>
 			</p>
+			if rate != nil && len(rate.Meals) > 0 {
+				@RateSection(*rate)
+			}
+			@NotCookedSection(r.NotCooked, false)
+			<h2 class="sec-label">The plan · { mealCount(len(r.Meals)) }</h2>
+			if rate == nil || len(rate.Meals) == 0 {
+				<p class="body muted">Here's a first guess. Rate it and next week gets better.</p>
+			}
 			@AskForm()
 			@DraftMeals(r, me)
-			@NotCookedSection(r.NotCooked, false)
 			<div class="review-foot">
 				@ListPreviewLink(preview)
 				<form action="/plans/next/confirm" method="post">
-					<button type="submit" class="primary wide">Confirm week</button>
+					<button type="submit" class="primary wide">Confirm plan</button>
 				</form>
+				<p class="small muted center">Confirms itself on { r.ConfirmsAt.Format("Monday") } at { r.ConfirmsAt.Format("15:04") }</p>
 			</div>
 		</div>
 	}

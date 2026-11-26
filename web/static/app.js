@@ -106,7 +106,11 @@
     const done = $$("#list .sec .item.checked").length;
     const total = $$("#list .sec .item").length;
     const text = $(".progress-text", p);
-    if (text) text.textContent = `${done} of ${total} in the basket`;
+    if (text) {
+      const all = total > 0 && done === total;
+      text.textContent = all ? "All ticked. Go home, nobody's checking." : `${done} of ${total} in the basket`;
+      text.classList.toggle("list-done", all);
+    }
     const fill = $(".bar-fill", p);
     if (fill) fill.style.width = total ? `${Math.floor((done * 100) / total)}%` : "0%";
   }
@@ -205,6 +209,62 @@
       queueTick(elt.dataset.itemId, elt.dataset.checked !== "true");
     }
   });
+  // ---- announcements ---------------------------------------------------------
+  // Content that changes under the reader (a new plan arriving over SSE) is
+  // announced in #announce; a boosted page change moves focus to its title.
+  function announce(msg) {
+    const el = $("#announce");
+    if (!el) return;
+    el.textContent = "";
+    setTimeout(() => (el.textContent = msg), 50);
+  }
+  const cardStates = { ready: "Next week's plan is ready.", failed: "We couldn't make a plan just now." };
+  let cardState = null; // last state seen, so a refresh in the same state stays quiet
+  const seeCard = () => {
+    const card = $("#draft-card");
+    const st = card ? card.dataset.state : null;
+    const changed = cardState !== null && st !== cardState;
+    cardState = st;
+    return changed ? cardStates[st] : null;
+  };
+  document.addEventListener("DOMContentLoaded", seeCard);
+  document.addEventListener("htmx:afterSettle", (e) => {
+    const boosted = !!(e.detail.boosted || (e.detail.requestConfig && e.detail.requestConfig.boosted));
+    if (e.detail.target && e.detail.target.id === "draft-card") {
+      const msg = seeCard();
+      if (msg) announce(msg);
+    } else if (boosted) {
+      seeCard(); // a new page: start from its card, say nothing
+    }
+    if (boosted) {
+      const t = $("#page-title");
+      if (t) t.focus({ preventScroll: true });
+    }
+  });
+
+  // The server couldn't save a tick (5xx, timeout, rate limit): keep it in
+  // the queue to try again and say so under the row, not in the flash.
+  document.addEventListener("htmx:beforeSwap", (e) => {
+    const elt = e.detail.elt;
+    const st = e.detail.xhr ? e.detail.xhr.status : 0;
+    if (!(elt && elt.matches && elt.matches(".tick[data-item-id]"))) return;
+    if (st >= 500 || st === 408 || st === 429) {
+      e.detail.shouldSwap = false;
+      e.detail.isError = false;
+      queueTick(elt.dataset.itemId, elt.dataset.checked !== "true");
+      saveFailed(elt.dataset.itemId);
+    }
+  });
+  function saveFailed(itemId) {
+    const li = document.getElementById("item-" + itemId);
+    if (!li || $(".save-failed", li)) return;
+    const p = document.createElement("p");
+    p.className = "save-failed";
+    p.setAttribute("role", "status");
+    p.textContent = "That tick didn't save. We'll try again.";
+    li.appendChild(p);
+  }
+
   // The request failed at the network level: queue it.
   document.addEventListener("htmx:sendError", (e) => {
     const elt = e.detail.elt;

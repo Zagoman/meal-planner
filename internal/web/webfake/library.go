@@ -25,6 +25,7 @@ var (
 type libraryState struct {
 	outcomes map[uuid.UUID]domain.MealOutcome // by meal
 	recipes  []*libRecipe
+	photos   map[uuid.UUID]domain.RecipePhoto // by recipe
 }
 
 type libRecipe struct {
@@ -199,7 +200,12 @@ func (s *Store) RecipeDetail(_ context.Context, sc domain.Scope, recipeID uuid.U
 	if err != nil {
 		return domain.RecipeDetail{}, err
 	}
-	return domain.RecipeDetail{Recipe: r.Recipe, RecipeStats: h.stats(r.Meal.Title), Tweak: r.tweak, TweakedID: r.tweakedID}, nil
+	d := domain.RecipeDetail{Recipe: r.Recipe, RecipeStats: h.stats(r.Meal.Title), Tweak: r.tweak, TweakedID: r.tweakedID}
+	if p, ok := h.lib().photos[recipeID]; ok {
+		at := p.UpdatedAt
+		d.PhotoAt = &at
+	}
+	return d, nil
 }
 
 // RequestTweak makes "<title> (tweaked)"; a prompt containing "fail" fails.

@@ -121,6 +121,7 @@ func parseProfile(r *http.Request) (domain.Profile, error) {
 		AutoConfirmTime: strings.TrimSpace(r.PostFormValue("auto_confirm_time")),
 		Language:        strings.TrimSpace(r.PostFormValue("language")),
 		ProteinMix:      map[domain.Protein]int{},
+		Cuisines:        r.PostForm["cuisine"],
 	}
 	for _, t := range domain.PlannedMealTypes {
 		p.MealTargets[t] = num("meals_" + string(t))

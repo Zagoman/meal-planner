@@ -37,12 +37,20 @@ func (h *handlers) mealPage(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	m, err := h.svc.Plans.Meal(r.Context(), scope(r), id)
+	s := scope(r)
+	m, err := h.svc.Plans.Meal(r.Context(), s, id)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, http.StatusOK, MealPage(m))
+	pic := recipePic{RecipeID: m.RecipeID, Title: m.Title, Dish: domain.DishTypeOf(m), Back: "/meals/" + m.ID.String()}
+	if m.RecipeID != nil {
+		if pic.PhotoAt, err = h.svc.Library.PhotoAt(r.Context(), s, *m.RecipeID); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+	}
+	h.render(w, r, http.StatusOK, MealPage(m, pic))
 }
 
 func (h *handlers) rate(w http.ResponseWriter, r *http.Request) {

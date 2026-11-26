@@ -108,6 +108,12 @@ type Library interface {
 	SaveImport(ctx context.Context, s domain.Scope, draftID uuid.UUID, r domain.MealJSON) (domain.Recipe, error)
 	// CreateRecipe saves a recipe written by hand.
 	CreateRecipe(ctx context.Context, s domain.Scope, r domain.MealJSON) (domain.Recipe, error)
+	// SetPhoto stores (or replaces) the family's photo of a recipe; jpeg
+	// is already resized by imagefit. PhotoAt is nil without a photo.
+	SetPhoto(ctx context.Context, s domain.Scope, recipeID uuid.UUID, jpeg []byte) error
+	Photo(ctx context.Context, s domain.Scope, recipeID uuid.UUID) (domain.RecipePhoto, error)
+	PhotoAt(ctx context.Context, s domain.Scope, recipeID uuid.UUID) (*time.Time, error)
+	DeletePhoto(ctx context.Context, s domain.Scope, recipeID uuid.UUID) error
 }
 
 // Lists is the shopping list of the active plan.

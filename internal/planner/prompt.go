@@ -123,6 +123,9 @@ func writeProfile(b *strings.Builder, p domain.Profile, sections []domain.Sectio
 	if len(p.Avoid) > 0 {
 		fmt.Fprintf(b, "- Never use (avoid list): %s\n", strings.Join(quoteAll(p.Avoid), ", "))
 	}
+	if len(p.Cuisines) > 0 {
+		fmt.Fprintf(b, "- Cuisines the family loves (lean on them, but keep variety): %s\n", strings.Join(p.Cuisines, ", "))
+	}
 	if p.Shop != "" {
 		fmt.Fprintf(b, "- Shops at: %s\n", p.Shop)
 	}

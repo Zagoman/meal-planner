@@ -134,3 +134,16 @@ DELETE FROM recipe_drafts WHERE id = $1 AND household_id = $2;
 -- name: LatestDraftJob :one
 SELECT * FROM jobs WHERE household_id = $1 AND kind = 'import' AND payload ->> 'draft_id' = sqlc.arg(draft_id)::text
 ORDER BY created_at DESC LIMIT 1;
+
+-- name: UpsertRecipePhoto :exec
+INSERT INTO recipe_photos (household_id, recipe_id, photo) VALUES ($1, $2, $3)
+ON CONFLICT (household_id, recipe_id) DO UPDATE SET photo = EXCLUDED.photo, updated_at = now();
+
+-- name: GetRecipePhoto :one
+SELECT photo, updated_at FROM recipe_photos WHERE household_id = $1 AND recipe_id = $2;
+
+-- name: GetRecipePhotoTime :one
+SELECT updated_at FROM recipe_photos WHERE household_id = $1 AND recipe_id = $2;
+
+-- name: DeleteRecipePhoto :execrows
+DELETE FROM recipe_photos WHERE household_id = $1 AND recipe_id = $2;

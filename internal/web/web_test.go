@@ -2,11 +2,19 @@ package web_test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,6 +26,7 @@ import (
 	"github.com/Zagoman/meal-planner/internal/config"
 	"github.com/Zagoman/meal-planner/internal/domain"
 	"github.com/Zagoman/meal-planner/internal/events"
+	"github.com/Zagoman/meal-planner/internal/imagefit"
 	"github.com/Zagoman/meal-planner/internal/web"
 	"github.com/Zagoman/meal-planner/internal/web/webfake"
 )
@@ -50,6 +59,7 @@ type req struct {
 	session      string
 	hx           bool
 	origin       string // default: same origin for unsafe methods
+	page         string // HX-Current-URL path, for requests made from a page
 }
 
 func (f *fixture) do(t *testing.T, q req) *httptest.ResponseRecorder {
@@ -79,6 +89,9 @@ func (f *fixture) do(t *testing.T, q req) *httptest.ResponseRecorder {
 	}
 	if q.hx {
 		r.Header.Set("HX-Request", "true")
+	}
+	if q.page != "" {
+		r.Header.Set("HX-Current-URL", origin+q.page)
 	}
 	rec := httptest.NewRecorder()
 	f.h.ServeHTTP(rec, r)
@@ -346,7 +359,7 @@ func TestDraftReviewFlow(t *testing.T) {
 		t.Fatalf("generate: %d %s", rec.Code, rec.Body)
 	}
 	// This week is not rated yet, so the review starts with the rating step.
-	mustContain(t, "card", rec.Body.String(), `data-state="ready"`, "Next week is ready", `href="/plans/current/rate"`, "Rate this week, then review")
+	mustContain(t, "card", rec.Body.String(), `data-state="ready"`, "Next week is ready", `href="/plans/next"`, "Review plan", "Rate this week, then review")
 	if p, _ := f.store.Current(context.Background(), f.seed.Anna); p.ID != before.ID {
 		t.Error("a draft replaced this week's plan")
 	}
@@ -473,7 +486,7 @@ func TestRateAddBackAndLibrary(t *testing.T) {
 	rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[0].ID.String() + "/outcome", form: url.Values{"note": {"baby loved it"}}, session: anna, hx: true})
 	mustContain(t, "note", rec.Body.String(), "“baby loved it”")
 	rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[1].ID.String() + "/outcome", form: url.Values{"not_cooked": {"1"}}, session: anna, hx: true})
-	mustContain(t, "not cooked", rec.Body.String(), "add it back at the end of the review", "2 of 5 done")
+	mustContain(t, "not cooked", rec.Body.String(), "add it back to next week", "2 of 5 done")
 	if rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[2].ID.String() + "/outcome", form: url.Values{"rating": {"7"}}, session: anna, hx: true}); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("rating 7: %d", rec.Code)
 	}
@@ -1162,3 +1175,174 @@ func TestImportAvoidAndCook(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// Design step B: the plan screen is one pass. Rating comes first, a meal
+// marked not cooked shows up under "Not cooked last week" straight away,
+// then the draft and Confirm plan; the old rating page sends you here.
+func TestPlanScreenOnePass(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	anna := f.session(f.seed.Anna)
+	p := f.seed.HomePlan
+	if rec := f.do(t, req{method: "POST", path: "/plans/next/generate", session: anna, hx: true}); rec.Code != http.StatusOK {
+		t.Fatalf("generate: %d", rec.Code)
+	}
+	rec := f.do(t, req{path: "/plans/next", session: anna})
+	body := rec.Body.String()
+	mustContain(t, "plan screen", body, `id="rate"`, "How was this week?", `id="rate-progress"`, `id="not-cooked"`,
+		`id="draft-meals"`, "Confirm plan", "Confirms itself on", "hsv-chip--warning")
+	if strings.Index(body, `id="rate"`) > strings.Index(body, `id="draft-meals"`) {
+		t.Error("rating comes after the draft")
+	}
+	if strings.Contains(body, "first guess") {
+		t.Error("first-guess line on a household that has a plan")
+	}
+	if rec = f.do(t, req{path: "/plans/current/rate", session: anna}); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/plans/next#rate" {
+		t.Errorf("rate page with a draft: %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+	// Not cooked, from the plan screen: the section comes back out of band
+	// (with a meal the draft doesn't already have again).
+	rev, err := f.store.Review(context.Background(), f.seed.Anna)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nc domain.Meal
+	for _, m := range p.Meals {
+		if !slices.ContainsFunc(rev.Meals, func(d domain.DraftMeal) bool { return d.Title == m.Title }) {
+			nc = m
+			break
+		}
+	}
+	if nc.ID == uuid.Nil {
+		t.Fatal("every meal of this week is in the draft")
+	}
+	rec = f.do(t, req{method: "POST", path: "/meals/" + nc.ID.String() + "/outcome", form: url.Values{"not_cooked": {"1"}},
+		session: anna, hx: true, page: "/plans/next"})
+	mustContain(t, "not cooked", rec.Body.String(), `id="not-cooked"`, `hx-swap-oob="true"`, "Not cooked last week", nc.Title, "1 of 5 done")
+	// From the rating page there is no Not cooked section to update.
+	rec = f.do(t, req{method: "POST", path: "/meals/" + p.Meals[0].ID.String() + "/outcome", form: url.Values{"rating": {"5"}},
+		session: anna, hx: true, page: "/plans/current/rate"})
+	if strings.Contains(rec.Body.String(), `id="not-cooked"`) {
+		t.Error("not-cooked section sent to the rating page")
+	}
+	// Without JavaScript, a rating on the plan screen comes back to it.
+	r := httptest.NewRequest("POST", origin+"/meals/"+p.Meals[2].ID.String()+"/outcome", strings.NewReader("rating=4"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Origin", origin)
+	r.Header.Set("Referer", origin+"/plans/next")
+	r.AddCookie(&http.Cookie{Name: web.CookieName, Value: anna})
+	w := httptest.NewRecorder()
+	f.h.ServeHTTP(w, r)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/plans/next#rate" {
+		t.Errorf("no-JS rating: %d %q", w.Code, w.Header().Get("Location"))
+	}
+}
+
+// Design step B: setup sends the baby switch and the optional cuisines.
+func TestSetupFormBabyAndCuisines(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	anna := f.session(f.seed.Anna)
+	rec := f.do(t, req{path: "/setup", session: anna})
+	mustContain(t, "setup", rec.Body.String(), "1 of 5", "Who eats?", `name="baby_portions"`, `role="switch"`,
+		"5 of 5 · optional", `name="cuisine" value="Danish classics"`, "with the help of AI", "only used to make your plans")
+	rec = f.do(t, req{method: "POST", path: "/setup", session: anna, form: url.Values{
+		"meals_breakfast": {"0"}, "meals_lunch": {"0"}, "meals_dinner": {"3"}, "meals_baking": {"0"},
+		"people": {"2"}, "baby_portions": {"on"}, "shopping_day": {"saturday"}, "cuisine": {"Greek", "Indian"},
+	}})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("setup: %d %s", rec.Code, rec.Body)
+	}
+	got, err := f.store.Get(context.Background(), f.seed.Anna)
+	if err != nil || !got.BabyPortions || strings.Join(got.Cuisines, ",") != "Greek,Indian" {
+		t.Errorf("profile after setup: %+v %v", got, err)
+	}
+	// The profile page keeps them (saving preferences must not wipe them).
+	mustContain(t, "profile", f.do(t, req{path: "/profile", session: anna}).Body.String(), "Cuisines you love",
+		`value="Greek" checked`, `value="Indian" checked`)
+}
+
+// Design step C: the meal page shows the dish drawing until the family adds
+// a photo; the photo is resized, served only to its household, and removed.
+func TestRecipePhotoUpload(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	anna, carl := f.session(f.seed.Anna), f.session(f.seed.Carl)
+	meal := f.seed.HomePlan.Meals[0]
+	page := "/meals/" + meal.ID.String()
+	body := f.do(t, req{path: page, session: anna}).Body.String()
+	mustContain(t, "meal page", body, `id="recipe-picture"`, `class="drawing"`, "Add your photo", `name="photo"`, `value="`+page+`"`)
+	m := regexp.MustCompile(`action="/recipes/([0-9a-f-]{36})/photo"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("no photo form")
+	}
+	recipe := m[1]
+
+	upload := func(session, path string, img []byte) *httptest.ResponseRecorder {
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		_ = mw.WriteField("back", page)
+		fw, _ := mw.CreateFormFile("photo", "dinner.png")
+		_, _ = fw.Write(img)
+		_ = mw.Close()
+		r := httptest.NewRequest("POST", origin+path, &buf)
+		r.Header.Set("Content-Type", mw.FormDataContentType())
+		r.Header.Set("Origin", origin)
+		r.AddCookie(&http.Cookie{Name: web.CookieName, Value: session})
+		w := httptest.NewRecorder()
+		f.h.ServeHTTP(w, r)
+		return w
+	}
+	var png bytes.Buffer
+	_ = pngEncode(&png, 2400, 1200)
+
+	// Not a picture: refused. Another household: not found.
+	if w := upload(anna, "/recipes/"+recipe+"/photo", []byte("not an image")); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("not an image: %d", w.Code)
+	}
+	if w := upload(carl, "/recipes/"+recipe+"/photo", png.Bytes()); w.Code != http.StatusNotFound {
+		t.Errorf("other household upload: %d", w.Code)
+	}
+	w := upload(anna, "/recipes/"+recipe+"/photo", png.Bytes())
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != page {
+		t.Fatalf("upload: %d %q", w.Code, w.Header().Get("Location"))
+	}
+	body = f.do(t, req{path: page, session: anna}).Body.String()
+	mustContain(t, "with photo", body, `class="hsv-drawing has-photo"`, `src="/recipes/`+recipe+`/photo?v=`, "Your photo of", "Change photo", "Remove photo")
+	if strings.Contains(body, `class="drawing"`) {
+		t.Error("drawing still shown next to the photo")
+	}
+	rec := f.do(t, req{path: "/recipes/" + recipe + "/photo?v=1", session: anna})
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/jpeg" || !strings.Contains(rec.Header().Get("Cache-Control"), "private") {
+		t.Fatalf("photo: %d %q %q", rec.Code, rec.Header().Get("Content-Type"), rec.Header().Get("Cache-Control"))
+	}
+	if cfg, err := jpeg.DecodeConfig(rec.Body); err != nil || max(cfg.Width, cfg.Height) > imagefit.MaxSide {
+		t.Errorf("stored photo: %+v %v", cfg, err)
+	}
+	// The library page shows it too.
+	mustContain(t, "recipe page", f.do(t, req{path: "/recipes/" + recipe, session: anna}).Body.String(), "Change photo")
+	for _, q := range []req{
+		{path: "/recipes/" + recipe + "/photo", session: carl},
+		{method: "POST", path: "/recipes/" + recipe + "/photo/delete", session: carl, form: url.Values{}},
+	} {
+		if rec := f.do(t, q); rec.Code != http.StatusNotFound {
+			t.Errorf("%s %s as another household: %d", q.method, q.path, rec.Code)
+		}
+	}
+	if rec := f.do(t, req{method: "POST", path: "/recipes/" + recipe + "/photo/delete", session: anna, form: url.Values{"back": {page}}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("delete: %d", rec.Code)
+	}
+	mustContain(t, "after delete", f.do(t, req{path: page, session: anna}).Body.String(), `class="drawing"`, "Add your photo")
+	if rec := f.do(t, req{path: "/recipes/" + recipe + "/photo", session: anna}); rec.Code != http.StatusNotFound {
+		t.Errorf("photo after delete: %d", rec.Code)
+	}
+}
+
+// pngEncode writes a w×h PNG test picture.
+func pngEncode(out io.Writer, w, h int) error {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for x := 0; x < w; x += 7 {
+		img.Set(x, x%h, color.RGBA{R: 184, G: 148, B: 106, A: 255})
+	}
+	return png.Encode(out, img)
+}

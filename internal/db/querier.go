@@ -61,6 +61,7 @@ type Querier interface {
 	DeletePantryItems(ctx context.Context, householdID uuid.UUID) error
 	DeleteRecipe(ctx context.Context, arg DeleteRecipeParams) error
 	DeleteRecipeDraft(ctx context.Context, arg DeleteRecipeDraftParams) (int64, error)
+	DeleteRecipePhoto(ctx context.Context, arg DeleteRecipePhotoParams) (int64, error)
 	DeleteSections(ctx context.Context, householdID uuid.UUID) error
 	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteStaleGeneratedListItems(ctx context.Context, arg DeleteStaleGeneratedListItemsParams) error
@@ -88,6 +89,8 @@ type Querier interface {
 	GetProfile(ctx context.Context, householdID uuid.UUID) (Profile, error)
 	GetRecipe(ctx context.Context, arg GetRecipeParams) (Recipe, error)
 	GetRecipeDraft(ctx context.Context, arg GetRecipeDraftParams) (RecipeDraft, error)
+	GetRecipePhoto(ctx context.Context, arg GetRecipePhotoParams) (GetRecipePhotoRow, error)
+	GetRecipePhotoTime(ctx context.Context, arg GetRecipePhotoTimeParams) (time.Time, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash []byte) (Session, error)
 	// Adding a name that is already on the list returns nothing (pgx.ErrNoRows).
 	InsertAvoidItem(ctx context.Context, arg InsertAvoidItemParams) (AvoidItem, error)
@@ -170,6 +173,7 @@ type Querier interface {
 	// An item that leaves the pantry forgets its Have it / Buy answer.
 	UpsertGeneratedListItem(ctx context.Context, arg UpsertGeneratedListItemParams) (ListItem, error)
 	UpsertOutcome(ctx context.Context, arg UpsertOutcomeParams) (MealOutcome, error)
+	UpsertRecipePhoto(ctx context.Context, arg UpsertRecipePhotoParams) error
 	UpsertVote(ctx context.Context, arg UpsertVoteParams) error
 	UsageByHousehold(ctx context.Context, since time.Time) ([]UsageByHouseholdRow, error)
 	// Single use: only an unused, unexpired link matches, even under races.

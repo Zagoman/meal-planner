@@ -189,6 +189,23 @@ func (q *Queries) DeleteRecipeDraft(ctx context.Context, arg DeleteRecipeDraftPa
 	return result.RowsAffected(), nil
 }
 
+const deleteRecipePhoto = `-- name: DeleteRecipePhoto :execrows
+DELETE FROM recipe_photos WHERE household_id = $1 AND recipe_id = $2
+`
+
+type DeleteRecipePhotoParams struct {
+	HouseholdID uuid.UUID
+	RecipeID    uuid.UUID
+}
+
+func (q *Queries) DeleteRecipePhoto(ctx context.Context, arg DeleteRecipePhotoParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRecipePhoto, arg.HouseholdID, arg.RecipeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getOutcome = `-- name: GetOutcome :one
 SELECT household_id, meal_id, status, rating, note, member_id, at FROM meal_outcomes WHERE meal_id = $1 AND household_id = $2
 `
@@ -270,6 +287,43 @@ func (q *Queries) GetRecipeDraft(ctx context.Context, arg GetRecipeDraftParams) 
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getRecipePhoto = `-- name: GetRecipePhoto :one
+SELECT photo, updated_at FROM recipe_photos WHERE household_id = $1 AND recipe_id = $2
+`
+
+type GetRecipePhotoParams struct {
+	HouseholdID uuid.UUID
+	RecipeID    uuid.UUID
+}
+
+type GetRecipePhotoRow struct {
+	Photo     []byte
+	UpdatedAt time.Time
+}
+
+func (q *Queries) GetRecipePhoto(ctx context.Context, arg GetRecipePhotoParams) (GetRecipePhotoRow, error) {
+	row := q.db.QueryRow(ctx, getRecipePhoto, arg.HouseholdID, arg.RecipeID)
+	var i GetRecipePhotoRow
+	err := row.Scan(&i.Photo, &i.UpdatedAt)
+	return i, err
+}
+
+const getRecipePhotoTime = `-- name: GetRecipePhotoTime :one
+SELECT updated_at FROM recipe_photos WHERE household_id = $1 AND recipe_id = $2
+`
+
+type GetRecipePhotoTimeParams struct {
+	HouseholdID uuid.UUID
+	RecipeID    uuid.UUID
+}
+
+func (q *Queries) GetRecipePhotoTime(ctx context.Context, arg GetRecipePhotoTimeParams) (time.Time, error) {
+	row := q.db.QueryRow(ctx, getRecipePhotoTime, arg.HouseholdID, arg.RecipeID)
+	var updated_at time.Time
+	err := row.Scan(&updated_at)
+	return updated_at, err
 }
 
 const insertUsage = `-- name: InsertUsage :exec
@@ -774,6 +828,22 @@ func (q *Queries) UpsertOutcome(ctx context.Context, arg UpsertOutcomeParams) (M
 		&i.At,
 	)
 	return i, err
+}
+
+const upsertRecipePhoto = `-- name: UpsertRecipePhoto :exec
+INSERT INTO recipe_photos (household_id, recipe_id, photo) VALUES ($1, $2, $3)
+ON CONFLICT (household_id, recipe_id) DO UPDATE SET photo = EXCLUDED.photo, updated_at = now()
+`
+
+type UpsertRecipePhotoParams struct {
+	HouseholdID uuid.UUID
+	RecipeID    uuid.UUID
+	Photo       []byte
+}
+
+func (q *Queries) UpsertRecipePhoto(ctx context.Context, arg UpsertRecipePhotoParams) error {
+	_, err := q.db.Exec(ctx, upsertRecipePhoto, arg.HouseholdID, arg.RecipeID, arg.Photo)
+	return err
 }
 
 const usageByHousehold = `-- name: UsageByHousehold :many

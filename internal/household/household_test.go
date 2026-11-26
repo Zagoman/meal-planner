@@ -410,3 +410,38 @@ func TestFeedbackAndRecipes(t *testing.T) {
 		t.Errorf("recipe after meal delete: %+v %v", list, err)
 	}
 }
+
+// Design step B: setup keeps the baby-portions switch and the optional
+// cuisines; an unknown cuisine is refused; another household is untouched.
+func TestSetupBabyPortionsAndCuisines(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newFixture(t)
+	in := domain.SetupInput{
+		MealTargets:  map[domain.MealType]int{domain.MealDinner: 4},
+		People:       3,
+		BabyPortions: true,
+		ShoppingDay:  domain.Sunday,
+		Cuisines:     []string{"Italian", "Greek", "Italian"},
+	}
+	p, err := f.s.Setup(ctx, f.a, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.BabyPortions || !p.SetupDone || len(p.Cuisines) != 2 || p.Cuisines[0] != "Italian" || p.Cuisines[1] != "Greek" {
+		t.Errorf("after setup: %+v", p)
+	}
+	// Skipping the step stores no cuisines (not NULL).
+	in.Cuisines, in.BabyPortions = nil, false
+	if p, err = f.s.Setup(ctx, f.a, in); err != nil || p.BabyPortions || len(p.Cuisines) != 0 || p.Cuisines == nil {
+		t.Errorf("skipped: %+v %v", p, err)
+	}
+	in.Cuisines = []string{"Martian"}
+	var ve *domain.ValidationError
+	if _, err := f.s.Setup(ctx, f.a, in); !errors.As(err, &ve) || !strings.Contains(strings.Join(ve.Problems, ";"), "cuisines") {
+		t.Errorf("unknown cuisine: %v", err)
+	}
+	if pb, _ := f.s.Get(ctx, f.b); pb.BabyPortions || len(pb.Cuisines) != 0 || pb.TotalMeals() == 4 && pb.People == 3 {
+		t.Errorf("B changed: %+v", pb)
+	}
+}

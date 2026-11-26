@@ -20,9 +20,14 @@ templ WeekPage(p domain.Plan, hasPlan bool, card domain.DraftCard) {
 templ WeekBody(p domain.Plan, hasPlan bool) {
 	<div id="week" hx-get="/week" hx-select="#week" hx-trigger="sse:plan.updated" hx-swap="outerHTML" hx-disinherit="*">
 		if !hasPlan {
-			<p class="empty muted">No plan for this week yet.</p>
+			<div class="empty">
+				<p class="heading">Nothing planned yet. Even the fridge is calm.</p>
+			</div>
 		} else {
 			@ConfirmNote(p)
+			<p class="sub eyebrow">
+				Week { itoa(weekNumber(p.WeekStart)) } · <span class="hsv-chip hsv-chip--success">Confirmed</span>
+			</p>
 			<p class="muted small sub">{ mealCount(len(p.Meals)) } · cook them in any order</p>
 			<h2 class="sec-label">This week's meals</h2>
 			<div id="week-meals" class="meals">
@@ -69,7 +74,7 @@ templ RateForm(mealID uuid.UUID) {
 		</fieldset>
 		<label class="visually-hidden" for={ "note-" + mealID.String() }>Note</label>
 		<input id={ "note-" + mealID.String() } name="note" maxlength="500" placeholder="Note (optional), e.g. baby loved it"/>
-		<button type="submit">Save rating</button>
+		<button type="submit" class="secondary-btn">Save rating</button>
 	</form>
 }
 

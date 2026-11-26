@@ -36,8 +36,8 @@ test("two phones review a draft together and confirm once", async ({ browser }) 
     await expect(p.getByText("Next week is ready")).toBeVisible();
   }
 
-  // Both open the review (full screen: no tab bar). "Start review" opens
-  // the rating step first (rate-library.spec.ts); go straight to the draft.
+  // Both open the review (full screen: no tab bar), which also holds the
+  // rating step (rate-library.spec.ts).
   for (const p of [anna, ben]) {
     await p.goto("/plans/next");
     await expect(p.getByRole("heading", { name: "Next week", exact: true })).toBeVisible();
@@ -97,7 +97,7 @@ test("a draft confirmed on one phone sends the other back to the week", async ({
   await expect(ben.getByRole("heading", { name: "Next week", exact: true })).toBeVisible();
 
   await anna.goto("/plans/next");
-  await anna.getByRole("button", { name: "Confirm week" }).click();
+  await anna.getByRole("button", { name: "Confirm plan" }).click();
   await expect(anna).toHaveURL(/\/week$/);
   await expect(ben).toHaveURL(/\/week$/, { timeout: 3_000 });
 });

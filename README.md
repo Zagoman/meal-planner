@@ -1,6 +1,6 @@
-# Meal Planner
+# Hvad skal vi ha'?
 
-Self-hosted weekly meal planner for several households: ask for dinners in
+Self-hosted weekly meal planner (code name meal-planner) for several households: ask for dinners in
 plain language, Claude returns the meals, the server builds a shopping list by
 shop section, and everyone ticks it off live on their phone.
 

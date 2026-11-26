@@ -9,9 +9,13 @@ import (
 // MealPage is a recipe of this week (C1): pills, ingredients with "avoid
 // in future plans", steps with the baby-portion step marked, rating, and
 // Start cooking.
-templ MealPage(m domain.Meal) {
+templ MealPage(m domain.Meal, pic recipePic) {
 	@SubLayout(m.Title, TabRecipe, "/week", "This week") {
+		@RecipePicture(pic)
 		<p class="eyebrow">{ recipeMeta(m.Day, m.MealType, m.Minutes, m.Servings, m.OnePot) }</p>
+		if hasBabyStep(m.Steps) {
+			@BabyNote()
+		}
 		@IngredientList(m.Ingredients, m.AfterBabyPortion, "/meals/"+m.ID.String())
 		@StepList(m.Steps)
 		<details class="card rate">
@@ -22,6 +26,14 @@ templ MealPage(m domain.Meal) {
 			<a class="button primary wide" href={ templ.SafeURL("/meals/" + m.ID.String() + "/cook") }>Start cooking</a>
 		</div>
 	}
+}
+
+// BabyNote is the info box on a recipe with a baby-portion step.
+templ BabyNote() {
+	<div class="baby-note">
+		<span class="sec-label">Baby portion</span>
+		<span>Set a small portion aside before you add salt.</span>
+	</div>
 }
 
 // IngredientList is a recipe's ingredients, each with a button to keep it
@@ -144,7 +156,7 @@ templ CookStep(title, back string, steps []domain.Step, after []string, n int) {
 			if st.TimerMin != nil {
 				<div class="cook-timer">
 					<span class="cook-clock" data-timer-display>{ itoa(*st.TimerMin) }:00</span>
-					<button type="button" class="primary" data-timer-min={ itoa(*st.TimerMin) }>Start timer</button>
+					<button type="button" class="secondary-btn" data-timer-min={ itoa(*st.TimerMin) }>Start timer</button>
 				</div>
 			}
 		</div>

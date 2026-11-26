@@ -201,6 +201,7 @@ type Profile struct {
 	AutoConfirmTime pgtype.Time
 	TimeZone        string
 	SetupDone       bool
+	Cuisines        []string
 }
 
 type Recipe struct {
@@ -232,6 +233,13 @@ type RecipeDraft struct {
 	Uncertain   []string
 	CreatedBy   uuid.NullUUID
 	CreatedAt   time.Time
+}
+
+type RecipePhoto struct {
+	HouseholdID uuid.UUID
+	RecipeID    uuid.UUID
+	Photo       []byte
+	UpdatedAt   time.Time
 }
 
 type Session struct {

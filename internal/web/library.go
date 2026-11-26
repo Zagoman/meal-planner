@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -30,7 +31,12 @@ func (h *handlers) ratePage(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, http.StatusOK, RatePage(l, c.State == domain.DraftReady))
+	if c.State == domain.DraftReady {
+		// The plan screen holds the rating step when a draft is waiting.
+		redirect(w, r, "/plans/next#rate")
+		return
+	}
+	h.render(w, r, http.StatusOK, RatePage(l))
 }
 
 // setOutcome is POST /meals/{id}/outcome with rating=1..5, not_cooked=1,
@@ -61,8 +67,13 @@ func (h *handlers) setOutcome(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	onReview := fromReview(r)
 	if !isHX(r) {
-		redirect(w, r, "/plans/current/rate")
+		if onReview {
+			redirect(w, r, "/plans/next#rate")
+		} else {
+			redirect(w, r, "/plans/current/rate")
+		}
 		return
 	}
 	l, err := h.svc.Outcomes.RateList(r.Context(), s)
@@ -70,7 +81,27 @@ func (h *handlers) setOutcome(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, http.StatusOK, outcomeSwap(m, l))
+	var notCooked []domain.NotCookedMeal
+	if onReview {
+		rev, err := h.svc.Drafts.Review(r.Context(), s)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			h.fail(w, r, err)
+			return
+		}
+		notCooked = rev.NotCooked
+	}
+	h.render(w, r, http.StatusOK, outcomeSwap(m, l, notCooked, onReview))
+}
+
+// fromReview reports whether a request came from the plan screen
+// (/plans/next), by htmx's current URL or the referrer.
+func fromReview(r *http.Request) bool {
+	for _, raw := range []string{r.Header.Get("HX-Current-URL"), r.Referer()} {
+		if u, err := url.Parse(raw); err == nil && raw != "" && u.Path == "/plans/next" {
+			return true
+		}
+	}
+	return false
 }
 
 // notCooked is GET /plans/next/not-cooked: the review page's section.
@@ -155,7 +186,9 @@ func (h *handlers) recipePage(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.render(w, r, http.StatusOK, RecipeDetailPage(d))
+	h.render(w, r, http.StatusOK, RecipeDetailPage(d, recipePic{
+		RecipeID: &d.ID, Title: d.Meal.Title, Dish: domain.DishTypeOf(d.Meal), PhotoAt: d.PhotoAt, Back: "/recipes/" + d.ID.String(),
+	}))
 }
 
 // tweakBox is GET /recipes/{id}/tweak: the partial the SSE event refetches.

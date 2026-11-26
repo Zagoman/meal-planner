@@ -10,8 +10,8 @@ templ ListPage(l domain.List, hasPlan bool, sections []domain.Section) {
 	@Layout("Shopping list", TabList) {
 		if !hasPlan {
 			<div class="empty">
-				<p>No plan this week yet, so there's no list.</p>
-				<p><a class="button" href="/week">Plan the week</a></p>
+				<p class="body muted">Nothing to buy yet. Confirm a plan and the list fills itself.</p>
+				<p><a class="button secondary-btn" href="/week">Go to the plan</a></p>
 			</div>
 		} else {
 			<div id="list-live" hx-ext="sse" sse-connect="/list/stream">
@@ -41,7 +41,11 @@ templ ListBody(l domain.List) {
 templ Progress(l domain.List) {
 	{{ done, total := l.Progress() }}
 	<div id="progress" class="progress" data-done={ itoa(done) } data-total={ itoa(total) }>
-		<p class="progress-text">{ itoa(done) } of { itoa(total) } in the basket</p>
+		if total > 0 && done == total {
+			<p class="progress-text list-done">All ticked. Go home, nobody's checking.</p>
+		} else {
+			<p class="progress-text">{ itoa(done) } of { itoa(total) } in the basket</p>
+		}
 		<div class="bar" role="progressbar" aria-label="Shopping progress" aria-valuemin="0" aria-valuemax={ itoa(total) } aria-valuenow={ itoa(done) }>
 			<div class="bar-fill" style={ barStyle(done, total) }></div>
 		</div>

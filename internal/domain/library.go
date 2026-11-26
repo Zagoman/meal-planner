@@ -114,6 +114,14 @@ type RecipeDetail struct {
 	// new version it made.
 	Tweak     *Job       `json:"tweak,omitempty"`
 	TweakedID *uuid.UUID `json:"tweaked_id,omitempty"`
+	// PhotoAt is when the family's photo was added; nil shows the drawing.
+	PhotoAt *time.Time `json:"photo_at,omitempty"`
+}
+
+// RecipePhoto is the family's photo of a recipe, a JPEG.
+type RecipePhoto struct {
+	JPEG      []byte
+	UpdatedAt time.Time
 }
 
 // NotCookedMeal is a meal of the plan that ended, marked not cooked, that
@@ -131,10 +139,12 @@ func TitleKey(title string) string {
 
 // SetupInput is the four setup questions of a new household.
 type SetupInput struct {
-	MealTargets map[MealType]int
-	People      int
-	Avoid       []string
-	ShoppingDay Weekday
+	MealTargets  map[MealType]int
+	People       int
+	BabyPortions bool
+	Avoid        []string
+	ShoppingDay  Weekday
+	Cuisines     []string // optional, values of Cuisines
 }
 
 // ImportSource is where an imported recipe came from.

@@ -2,7 +2,7 @@
 
 Everything known to be missing, rough or different from the dev handoff
 and from the design handover (Hvad skal vi ha'?; "Found" `DA` is design
-step A), in one place. Add a row when you find one; move it to **Fixed**
+step A, `DB` step B, `DC` step C), in one place. Add a row when you find one; move it to **Fixed**
 (with the commit) when it is done. `HANDOVER.md` says what each window built; this
 file is the to-do list that outlives the windows.
 
@@ -51,13 +51,28 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | G-30 | Cook mode | A running timer stops showing when you move to another step (the alarm still sounds). | You have to step back to see the time left. | Keep running timers in a bar above the step. | W5 |
 | G-31 | Cook mode | The Screen Wake Lock could not be checked in the preview browser (it fell back to "may turn the screen off"). | Works on phones that support it; unverified here. | Check on a phone. | W5 |
 | G-32 | Offline ticks | "Last tick wins" uses the phone's clock for offline ticks (clamped to the last 7 days and never later than the server's now). | A phone with a clock far behind can lose a tick it made later. | Fine for a household; a vector clock would be overkill. | W5 |
-| G-33 | Plan screen | The design handover puts "rate last week" and "not cooked last week" at the top of the plan screen, before the draft. They are still a separate rating page and a section of the review. | Two screens instead of one pass. | Design step B. | DA |
-| G-34 | Copy | The design handover's state copy is not in yet: first plan ("Here's a first guess…"), empty plan, empty list, list done ("All ticked…"), generation failed, tick save failed (revert + danger line). | The old wording shows in those states. | Design step B. | DA |
-| G-35 | Setup | No optional "Any cuisines you love?" step, no baby-portions switch (off by default), and no AI note ("Your plans are made with the help of AI…"). | Setup asks less than the handover. | Design step B. | DA |
-| G-36 | Recipe image | No dish-type line drawing or family photo on recipes ("Add your photo"). Needs a dish-type field and photo storage. | Recipes have no picture. | Design step C. | DA |
-| G-37 | Accessibility | After an htmx swap that changes the main content (a new plan arrives), focus is not moved to the new heading and nothing is announced. | Screen-reader users may miss the new plan. | Focus `#page-title` or announce with `aria-live` when the draft card turns ready. | DA |
-| G-38 | Buttons | "One primary per screen" isn't enforced everywhere: the recipe page has "Add to next week" (primary) next to "Start cooking"; forms keep their own primary. | Slightly busier screens than the handover. | Review button hierarchy screen by screen in step B. | DA |
 | G-39 | Domain | The app stays on meals.liluhome.dk; the brand domain (hvadskalviha.app or hvadskalvihave.dk) is still to be checked and bought. | Name and domain differ. | Decide the domain; move `BASE_URL`, email sender and Caddy. | DA |
+| G-40 | Setup | Cuisines are a fixed list of eight (`domain.Cuisines`); a family can't type its own. | "Thai" or "Japanese" fans pick "Asian". | A free-text "Other" chip, cleaned like the avoid list. | DB |
+| G-41 | Plan screen | Until the week is rated, the plan screen is long: five rating cards before the draft (it folds to one line once all are answered). | More scrolling on the first visit of the week. | Fold rated cards as they are answered. | DB |
+| G-42 | Recipe image | The dish type is guessed from the title (English and Danish words), baking, fish and one-pot; breakfasts and anything unmatched get the oven dish drawing. | A porridge shows an oven dish. | Ask for a dish type in the meal schema, or add drawings (bowl, salad, sandwich). | DC |
+| G-43 | Recipe image | Photos show on the meal and recipe pages only, not as thumbnails in the week or the library. | Less visual lists. | Small thumbnails once the photo endpoint serves a smaller size. | DC |
+| G-44 | Backups | Recipe photos (about 100–400 KB each) are in the database, so dumps grow with them. | Bigger nightly dumps. | Fine for a family; move to files if it grows. | DC |
+| G-45 | FAQ | No FAQ page. The design handover says AI is mentioned "in onboarding and FAQ"; only the setup note exists. | Nowhere to read how plans are made or what the family's details are used for after setup. | A short FAQ page in the brand voice, linked from Profile. | DC |
+| G-46 | Brand | The new look is checked in the preview browser only, not on a phone (fonts, speckle, safe areas, the bar colour, the home-screen icon). | Something may look off on a real device. | Open it on an iPhone and an Android phone; re-add the home-screen app. | DC |
+| G-47 | Test fake | The e2e fake gives a new draft the same week start as the current plan, so both show the same week number in the preview. | Preview and e2e only; the real planner is right. | Start fake drafts on the next shopping day. | DC |
+
+### Later (the design handover says not yet)
+
+Not gaps to fix now; listed so they aren't lost. The dev handoff's own list
+is "Don't build yet" in `CLAUDE.md`.
+
+| What | Handover note |
+|---|---|
+| Light/dark setting | `data-theme` on `<html>` already forces a theme; no setting in Profile yet. |
+| Danish UI | Brand lines are Danish; the UI is English until it is translated (no i18n yet). |
+| Per-person never-eat lists | The avoid list is household-wide for now. |
+| Landing page | The lockups and `display` type are meant for it; the app has none (family use only). |
+| Social, validation | "Rated by a 1-year-old" series, showing the logo to family users: not code. |
 
 ## Deviations from the handoff (on purpose)
 
@@ -92,6 +107,12 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | Component classes (design) | `hsv-*` classes everywhere | `hvadskalviha.css` has the `hsv-*` components; existing class names are restyled to match in `app.css`. MealRow, Chip, Mark and Loader use `hsv-*` directly. Shopping rows stay buttons, not `<label>` + checkbox | Keeps the offline tick queue and every test selector working. |
 | Email mark (design) | mark SVG in emails | the name as serif text, no image | An image would be fetched from the server when the email is opened. |
 | Navigation (design) | not specified | the bottom tab bar stays fixed; action bars at the bottom are gone (actions end the content) | Navigation is not an action bar; the handover's rule is about actions. |
+| Setup (design) | one question per screen; a "Skip" button on the cuisines step | one page with five numbered questions; cuisines marked optional, nothing ticked means skipped | Works without JavaScript and keeps the setup to one submit. |
+| Plan screen (design) | titled "This week", rating shown as thumbs | `/plans/next` titled "Next week" ("Week N · Draft"), 1–5 ratings; the week page keeps "This week" for the confirmed plan with "Week N · Confirmed" | The draft and the week being cooked are different plans. |
+| Tick save failed (design) | revert the tick, then "We'll try again" | the tick stays (dashed, queued) and is retried; the line shows under the row until it saves | Reverting and retrying at once would show the wrong state while it retries. |
+| Empty plan (design) | heading + primary "Make a plan" | heading; the draft card above has the one "Make next week's plan now" button | One primary per screen. |
+| Dish type (design) | a recipe's dish type picks its drawing | worked out from the meal (`domain.DishTypeOf`), not stored or asked of the AI | No change to the meal schema or the prompt; good enough for six drawings. |
+| Photo upload (design) | "Add your photo" secondary button | the button opens the camera or library and uploads at once (no-JS: an Upload button); "Remove photo" is a link | One tap, like the recipe import. |
 
 ## Fixed
 
@@ -109,5 +130,14 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | — | The avoid sheet stayed open after "Avoid …" (the close handler was on the button; htmx fires on the form). | W5 (before commit) |
 | — | The avoid toast started with a lower-case ingredient name. | W5 (before commit) |
 | — | A 31 MB local build of the server binary (`server`, from `go build ./cmd/...`) was committed in `6fdd950` and pushed. Removed and ignored; it is still in the git history unless that is rewritten. | after W4 |
+| G-33 | The plan screen is one pass: rating, then Not cooked last week (updates as meals are marked), then the draft and Confirm plan; the old rating page redirects there while a draft waits. | design B (before commit) |
+| G-34 | The design handover's state copy: first guess, empty plan, empty list, list done, generation failed, tick save failed. | design B (before commit) |
+| G-35 | Setup has the baby-portions switch (off by default), an optional cuisines step (migration 00007, used in the prompt, editable in Profile) and the AI note. | design B (before commit) |
+| G-37 | A new or failed plan arriving over SSE is announced (`#announce`); a page change moves focus to its title. | design B (before commit) |
+| G-38 | One primary button per screen: the cook-mode timer, rating saves and Profile's secondary forms are secondary. | design B (before commit) |
+| G-36 | Recipes show the line drawing for their dish type (worked out from the meal) until the family adds a photo; "Add your photo" on the meal and recipe pages, stored resized in `recipe_photos` (migration 00008), served only to the household, removable. | design C (before commit) |
+| — | The homelab email patch and `deploy/README.md` still sent email as "Meal Planner" (the app's own default was renamed). | design C (before commit) |
+| — | Week numbers used the plan's first day, so a week starting on Sunday got the previous ISO week (the email said week 48 for a week that is mostly week 49). `domain.WeekNumber` counts from mid-week. | design B (before commit) |
+| — | A timeout during the database reads of a plan generation was not reported as a generation failure (`domain.ErrGeneration`); `TestGenerateClaudeErrorAndTimeout` failed now and then on `main`. | design B (before commit) |
 | — | Tapping a meal on the week page (or the draft card's link) opened a blank page: the links inherited `hx-select="#week"` from the SSE container. SSE containers now set `hx-disinherit="*"`; e2e test added. Was live in production (checked on `main`). | design A (before commit) |
 | — | After the restyle, week meal rows were centred and the recipe page's baby step split into two columns (old `.meal-link`, `.meal` and step rules). | design A (before commit) |

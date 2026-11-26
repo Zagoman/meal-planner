@@ -16,6 +16,7 @@ func profile() domain.Profile {
 		Shop:         "Netto",
 		BabyPortions: true,
 		Language:     "da",
+		Cuisines:     []string{"Greek", "Danish classics"},
 	}
 }
 
@@ -35,6 +36,7 @@ func TestBuildPlanPrompt(t *testing.T) {
 		"Spice level: mild",
 		"One-pot meals only: yes",
 		"Baby portions: yes",
+		"Cuisines the family loves (lean on them, but keep variety): Greek, Danish classics",
 		"chicken 2, fish 1, vegetarian 1",
 		`"mushrooms", "coriander"`,
 		"Netto",
@@ -58,7 +60,7 @@ func TestBuildPlanPrompt(t *testing.T) {
 func TestBuildPlanPromptMinimal(t *testing.T) {
 	t.Parallel()
 	got := BuildPlanPrompt(PromptInput{Profile: domain.Profile{MealTargets: map[domain.MealType]int{domain.MealDinner: 3}, People: 2, Language: "en"}})
-	if strings.Contains(got, "Ratings") || strings.Contains(got, "avoid list") || strings.Contains(got, "language") {
+	if strings.Contains(got, "Ratings") || strings.Contains(got, "avoid list") || strings.Contains(got, "language") || strings.Contains(got, "Cuisines") {
 		t.Errorf("empty sections leaked into prompt:\n%s", got)
 	}
 	if !strings.Contains(got, "No special request") {

@@ -162,7 +162,13 @@ type Profile struct {
 	SetupDone    bool   `json:"setup_done"`
 	BabyPortions bool   `json:"baby_portions"`
 	Language     string `json:"language"`
+	// Cuisines the family loves (values of Cuisines); the plan leans on
+	// them without using only them. Empty means no preference.
+	Cuisines []string `json:"cuisines"`
 }
+
+// Cuisines are the choices of the setup's "Any cuisines you love?" step.
+var Cuisines = []string{"Italian", "Greek", "Asian", "Danish classics", "Mexican", "Indian", "Middle Eastern", "French"}
 
 // TotalMeals is the sum of the meal targets.
 func (p Profile) TotalMeals() int {
@@ -231,6 +237,14 @@ const (
 
 // Plan is a week of meals. A "draft" is waiting for review; "active" is
 // the confirmed plan the shopping list belongs to.
+// WeekNumber is the ISO week a plan week mostly falls in: plan weeks start
+// on the shopping day (often a Sunday, the last day of an ISO week), so it
+// is counted from the middle of the week.
+func WeekNumber(weekStart time.Time) int {
+	_, w := weekStart.AddDate(0, 0, 3).ISOWeek()
+	return w
+}
+
 type Plan struct {
 	ID            uuid.UUID  `json:"id"`
 	WeekStart     time.Time  `json:"week_start"`
@@ -257,6 +271,8 @@ type Meal struct {
 	Ingredients      []Ingredient `json:"ingredients"`
 	Steps            []Step       `json:"steps"`
 	AfterBabyPortion []string     `json:"after_baby_portion"`
+	// RecipeID is the library recipe this meal is saved as (its photo).
+	RecipeID *uuid.UUID `json:"recipe_id,omitempty"`
 }
 
 type Ingredient struct {

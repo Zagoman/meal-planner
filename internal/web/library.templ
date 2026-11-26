@@ -18,11 +18,8 @@ templ SubLayout(title string, active Tab, back, backLabel string) {
 
 // ---- P2 Rate last week ------------------------------------------------------
 
-templ RatePage(l domain.RateList, hasDraft bool) {
+templ RatePage(l domain.RateList) {
 	@FullLayout("How was this week?", "/week", "Week") {
-		if hasDraft {
-			<p class="step small muted">Step 1 of 2</p>
-		}
 		<p class="sub small muted">Rate what you cooked, or mark it not cooked. This shapes next week's plan.</p>
 		@RateProgress(l, false)
 		<div class="meals rate-list">
@@ -31,12 +28,7 @@ templ RatePage(l domain.RateList, hasDraft bool) {
 			}
 		</div>
 		<div class="rate-foot">
-			if hasDraft {
-				<a class="button secondary-btn" href="/plans/next">Skip</a>
-				<a class="button primary" href="/plans/next">Continue to draft</a>
-			} else {
-				<a class="button primary" href="/week">Done</a>
-			}
+			<a class="button primary" href="/week">Done</a>
 		</div>
 	}
 }
@@ -75,7 +67,7 @@ templ OutcomeCard(m domain.RateMeal) {
 			}
 		</div>
 		if notCooked {
-			<p class="small muted">You can add it back at the end of the review.</p>
+			<p class="small muted">You can add it back to next week's plan.</p>
 		} else {
 			<div class="stars" role="group" aria-label={ "Rate " + m.Title }>
 				for i := 1; i <= 5; i++ {
@@ -101,7 +93,7 @@ templ OutcomeCard(m domain.RateMeal) {
 					@outcomeForm(m, "note") {
 						<label class="visually-hidden" for={ "note-" + m.ID.String() }>Note</label>
 						<input id={ "note-" + m.ID.String() } name="note" maxlength="1000" value={ m.Outcome.Note } placeholder="E.g. baby loved it"/>
-						<button type="submit">Save note</button>
+						<button type="submit" class="small-btn">Save note</button>
 					}
 				</details>
 			}
@@ -114,6 +106,32 @@ templ outcomeForm(m domain.RateMeal, kind string) {
 		hx-post={ "/meals/" + m.ID.String() + "/outcome" } hx-target="closest article" hx-swap="outerHTML">
 		{ children... }
 	</form>
+}
+
+// RateSection is the rating step inside the plan screen. Once every meal
+// has an answer it folds away, so the draft comes first.
+templ RateSection(l domain.RateList) {
+	<section id="rate" class="rate-section">
+		if l.Done() == len(l.Meals) {
+			<details>
+				<summary>This week is rated · { itoa(l.Done()) } of { itoa(len(l.Meals)) }</summary>
+				@rateBody(l)
+			</details>
+		} else {
+			<h2 class="sec-label">How was this week?</h2>
+			<p class="small muted">Rate what you cooked, or mark it not cooked. Next week's plan learns from it.</p>
+			@rateBody(l)
+		}
+	</section>
+}
+
+templ rateBody(l domain.RateList) {
+	@RateProgress(l, false)
+	<div class="meals rate-list">
+		for _, m := range l.Meals {
+			@OutcomeCard(m)
+		}
+	</div>
 }
 
 // ---- Not cooked last week (review page) -------------------------------------
@@ -211,9 +229,10 @@ templ RecipeResults(recipes []domain.RecipeSummary) {
 
 // ---- L4 Recipe: tweak and add -------------------------------------------------
 
-templ RecipeDetailPage(d domain.RecipeDetail) {
+templ RecipeDetailPage(d domain.RecipeDetail, pic recipePic) {
 	@SubLayout(d.Meal.Title, TabRecipes, "/recipes", "Recipes") {
 		<div class="recipe" hx-ext="sse" sse-connect="/events">
+			@RecipePicture(pic)
 			<p class="eyebrow">
 				{ d.Meal.MealType.Label() } · { itoa(d.Meal.Minutes) } min · { statsLine(d.RecipeStats) } ·
 				if d.ParentID != nil {
@@ -280,9 +299,14 @@ templ TweakBox(d domain.RecipeDetail) {
 }
 
 // outcomeSwap is a rated meal's card plus the progress, out of band.
-templ outcomeSwap(m domain.RateMeal, l domain.RateList) {
+// outcomeSwap answers a rating: the card, the progress and, on the plan
+// screen, the Not cooked section (out of band).
+templ outcomeSwap(m domain.RateMeal, l domain.RateList, notCooked []domain.NotCookedMeal, onReview bool) {
 	@OutcomeCard(m)
 	@RateProgress(l, true)
+	if onReview {
+		@NotCookedSection(notCooked, true)
+	}
 }
 
 // addBackSwap is the draft's meals plus the Not cooked section, out of band.

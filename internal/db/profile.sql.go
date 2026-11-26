@@ -72,7 +72,7 @@ func (q *Queries) DeleteSections(ctx context.Context, householdID uuid.UUID) err
 }
 
 const getProfile = `-- name: GetProfile :one
-SELECT household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time, time_zone, setup_done FROM profiles WHERE household_id = $1
+SELECT household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time, time_zone, setup_done, cuisines FROM profiles WHERE household_id = $1
 `
 
 func (q *Queries) GetProfile(ctx context.Context, householdID uuid.UUID) (Profile, error) {
@@ -93,6 +93,7 @@ func (q *Queries) GetProfile(ctx context.Context, householdID uuid.UUID) (Profil
 		&i.AutoConfirmTime,
 		&i.TimeZone,
 		&i.SetupDone,
+		&i.Cuisines,
 	)
 	return i, err
 }
@@ -283,9 +284,10 @@ UPDATE profiles SET
     baby_portions     = $9,
     language          = $10,
     auto_confirm_time = $11,
+    cuisines          = COALESCE($12::text[], '{}'),
     updated_at        = now()
 WHERE household_id = $1
-RETURNING household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time, time_zone, setup_done
+RETURNING household_id, people, spice_level, one_pot, protein_mix, shop, shopping_day, baby_portions, language, updated_at, meal_targets, auto_confirm_time, time_zone, setup_done, cuisines
 `
 
 type UpdateProfileParams struct {
@@ -300,6 +302,7 @@ type UpdateProfileParams struct {
 	BabyPortions    bool
 	Language        string
 	AutoConfirmTime pgtype.Time
+	Cuisines        []string
 }
 
 func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error) {
@@ -315,6 +318,7 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		arg.BabyPortions,
 		arg.Language,
 		arg.AutoConfirmTime,
+		arg.Cuisines,
 	)
 	var i Profile
 	err := row.Scan(
@@ -332,6 +336,7 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (P
 		&i.AutoConfirmTime,
 		&i.TimeZone,
 		&i.SetupDone,
+		&i.Cuisines,
 	)
 	return i, err
 }

@@ -16,6 +16,7 @@ UPDATE profiles SET
     baby_portions     = $9,
     language          = $10,
     auto_confirm_time = $11,
+    cuisines          = COALESCE(sqlc.arg(cuisines)::text[], '{}'),
     updated_at        = now()
 WHERE household_id = $1
 RETURNING *;

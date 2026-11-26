@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 	"github.com/google/uuid"
@@ -88,6 +89,9 @@ func shortDay(d domain.Weekday) string {
 	}
 	return strings.ToUpper(string(d[:1])) + string(d[1:3])
 }
+
+// weekNumber is a plan week's number (domain.WeekNumber).
+func weekNumber(t time.Time) int { return domain.WeekNumber(t) }
 
 // hasBabyStep reports whether a recipe has a baby-portion step.
 func hasBabyStep(steps []domain.Step) bool {
@@ -240,4 +244,14 @@ func capitalize(s string) string {
 		return s
 	}
 	return strings.ToUpper(string(r[0])) + string(r[1:])
+}
+
+// inStrings reports whether s is one of list.
+func inStrings(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

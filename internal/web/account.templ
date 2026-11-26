@@ -59,7 +59,7 @@ templ JoinPage(p domain.InvitePreview, token string, signedIn bool, name, email 
 					<label>Email <input type="email" name="email" required autocomplete="email" placeholder="you@example.com" value={ email }/></label>
 					<button type="submit" class="primary wide">Email me a sign-in link</button>
 				</form>
-				<p class="muted small">No password. We'll send a link to sign in. After that, four quick questions and you'll see your first plan.</p>
+				<p class="muted small">No password. We'll send a link to sign in. After that, a few quick questions and you'll see your first plan.</p>
 			}
 			<p class="muted small">Invite links work once and expire after 7 days.</p>
 		</section>
@@ -70,26 +70,30 @@ templ JoinPage(p domain.InvitePreview, token string, signedIn bool, name, email 
 
 templ SetupPage(p domain.Profile) {
 	@Layout("Set up your household", TabNone) {
-		<p class="sub muted small">Four quick questions. Everything else can be changed later in Profile.</p>
+		<p class="sub muted">Tell us a little about your family. Everything can be changed later in Profile.</p>
 		<form class="setup stack" action="/setup" method="post">
 			<fieldset class="q">
-				<legend class="qt"><span class="qn">1 of 4</span> Which meals should we plan each week?</legend>
+				<legend class="qt"><span class="qn">1 of 5</span> Which meals should we plan each week?</legend>
 				for _, t := range domain.PlannedMealTypes {
 					@stepper("meals_"+string(t), t.Label(), p.MealTargets[t], 0, domain.MaxMealsPerType)
 				}
 			</fieldset>
 			<fieldset class="q">
-				<legend class="qt"><span class="qn">2 of 4</span> How many people eat?</legend>
+				<legend class="qt"><span class="qn">2 of 5</span> Who eats?</legend>
 				@stepper("people", "People", p.People, 1, 12)
+				<label class="check switch">
+					<input type="checkbox" role="switch" name="baby_portions" value="on" checked?={ p.BabyPortions }/>
+					<span>A little one eats with us<span class="small muted block">We'll mark when to set a baby portion aside, before salt, stock and cheese.</span></span>
+				</label>
 			</fieldset>
 			<fieldset class="q">
-				<legend class="qt"><span class="qn">3 of 4</span> Anything you never eat?</legend>
+				<legend class="qt"><span class="qn">3 of 5</span> Anything you never eat?</legend>
 				<label class="visually-hidden" for="setup-avoid">Foods to avoid, separated by commas</label>
 				<input id="setup-avoid" name="avoid" maxlength="1000" placeholder="E.g. onion, coriander" autocomplete="off"/>
 				<p class="muted small">Separate foods with commas. We never plan a meal with them.</p>
 			</fieldset>
 			<fieldset class="q">
-				<legend class="qt"><span class="qn">4 of 4</span> Which day do you usually shop?</legend>
+				<legend class="qt"><span class="qn">4 of 5</span> Which day do you usually shop?</legend>
 				<div class="days">
 					for _, d := range domain.Weekdays {
 						<label class="day">
@@ -100,10 +104,28 @@ templ SetupPage(p domain.Profile) {
 				</div>
 				<p class="muted small">Your draft arrives the evening before, and confirms itself at 08:00 on shopping day.</p>
 			</fieldset>
+			<fieldset class="q">
+				<legend class="qt"><span class="qn">5 of 5 · optional</span> Any cuisines you love?</legend>
+				@CuisineChips(p.Cuisines)
+				<p class="muted small">Pick any, or none. You can skip this.</p>
+			</fieldset>
+			<p class="note">Your plans are made with the help of AI. Your family's details are only used to make your plans.</p>
 			<button type="submit" class="primary wide">Make our first plan</button>
-			<p class="muted small center">Set to defaults for now: store and section order, spice level, baby portions (off).</p>
+			<p class="muted small center">Store, section order and spice level start with defaults.</p>
 		</form>
 	}
+}
+
+// CuisineChips are the cuisines as toggle chips (checkboxes named "cuisine").
+templ CuisineChips(selected []string) {
+	<div class="chips toggles">
+		for _, c := range domain.Cuisines {
+			<label class="chip">
+				<input type="checkbox" name="cuisine" value={ c } checked?={ inStrings(selected, c) }/>
+				{ c }
+			</label>
+		}
+	</div>
 }
 
 // stepper is a number input with − and + buttons (app.js); without
@@ -157,7 +179,7 @@ templ HouseholdMembers(v householdView) {
 						<option value="admin">Admin</option>
 					</select>
 				</label>
-				<button type="submit">Create invite link</button>
+				<button type="submit" class="secondary-btn">Create invite link</button>
 			</form>
 			<div id="invite-result"></div>
 		}

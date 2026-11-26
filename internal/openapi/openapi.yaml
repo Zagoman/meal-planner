@@ -422,6 +422,10 @@ components:
         shopping_day: {$ref: '#/components/schemas/Weekday'}
         baby_portions: {type: boolean}
         language: {type: string, example: en}
+        cuisines:
+          type: array
+          description: Cuisines the family loves; optional, from Italian, Greek, Asian, Danish classics, Mexican, Indian, Middle Eastern, French
+          items: {type: string, enum: [Italian, Greek, Asian, Danish classics, Mexican, Indian, Middle Eastern, French]}
     Section:
       type: object
       required: [key, name]

@@ -69,6 +69,10 @@ templ PrefsForm(p domain.Profile, saved bool) {
 		</label>
 		<label class="check"><input type="checkbox" name="one_pot" value="on" checked?={ p.OnePot }/> One-pot meals only</label>
 		<label class="check"><input type="checkbox" name="baby_portions" value="on" checked?={ p.BabyPortions }/> Take out a baby portion before salt, stock and cheese</label>
+		<fieldset class="plain">
+			<legend>Cuisines you love</legend>
+			@CuisineChips(p.Cuisines)
+		</fieldset>
 		<div class="row">
 			<label>
 				Shop
@@ -125,7 +129,7 @@ templ PantryForm(pantry []domain.PantryItem, saved bool) {
 			if saved {
 				<span class="saved" role="status">Saved ✓</span>
 			}
-			<button type="submit">Save pantry</button>
+			<button type="submit" class="secondary-btn">Save pantry</button>
 		</div>
 	</form>
 }
@@ -151,7 +155,7 @@ templ AvoidList(items []domain.AvoidItem) {
 		<form class="add" method="post" action="/profile/avoid" hx-post="/profile/avoid" hx-target="#avoid-list" hx-swap="outerHTML">
 			<label class="visually-hidden" for="avoid-name">Food to avoid</label>
 			<input id="avoid-name" name="name" required maxlength="100" placeholder="E.g. mushrooms" autocomplete="off"/>
-			<button type="submit">Add</button>
+			<button type="submit" class="secondary-btn">Add</button>
 		</form>
 	</div>
 }

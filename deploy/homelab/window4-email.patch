@@ -14,7 +14,7 @@ diff --color -ruN a/ansible/group_vars/all/main.yml b/ansible/group_vars/all/mai
      ANTHROPIC_API_KEY: "{{ vault_mealplanner_anthropic_api_key }}"
      CLAUDE_MODEL: "claude-sonnet-5-5"
 +    RESEND_API_KEY: "{{ vault_mealplanner_resend_api_key }}"
-+    EMAIL_FROM: "Meal Planner <meals@liluhome.dk>"
++    EMAIL_FROM: "Hvad skal vi ha'? <meals@liluhome.dk>"
      POSTGRES_PASSWORD: "{{ vault_mealplanner_db_password }}"
      DATABASE_URL: "postgres://mealplanner:{{ vault_mealplanner_db_password }}@db:5432/mealplanner?sslmode=disable"
    caddy:
@@ -45,7 +45,7 @@ diff --color -ruN a/mealplanner/compose.yml b/mealplanner/compose.yml
        CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-5-5}
 +      # Email (sign-in links, draft ready). Empty key: emails are not sent.
 +      RESEND_API_KEY: ${RESEND_API_KEY:-}
-+      EMAIL_FROM: ${EMAIL_FROM:-Meal Planner <meals@liluhome.dk>}
++      EMAIL_FROM: ${EMAIL_FROM:-Hvad skal vi ha'? <meals@liluhome.dk>}
        TZ: ${TZ:-Europe/Copenhagen}
      healthcheck:
        # distroless: no shell or curl, the binary checks itself.

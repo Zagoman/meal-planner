@@ -768,8 +768,7 @@ func (s *Service) mailDraftReady(ctx context.Context, q *db.Queries, householdID
 		return
 	}
 	at := confirmsAt(draft.WeekStart, p)
-	_, week := draft.WeekStart.ISOWeek()
-	subject := fmt.Sprintf("Your plan for week %d is ready.", week)
+	subject := fmt.Sprintf("Your plan for week %d is ready.", domain.WeekNumber(draft.WeekStart))
 	intro := fmt.Sprintf("%d %s, ready for you to look over together. It confirms itself on %s at %s.",
 		meals, plural(meals, "meal", "meals"), at.Format("Monday"), at.Format("15:04"))
 	for _, m := range members {

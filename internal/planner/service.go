@@ -105,6 +105,11 @@ func (s *Service) Generate(ctx context.Context, sc domain.Scope, prompt string) 
 	q := db.New(s.pool)
 	hh, err := s.loadHousehold(ctx, q, sc.HouseholdID)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			// The whole call is under the timeout, reads included: running
+			// out of time is a generation failure either way.
+			return domain.Plan{}, fmt.Errorf("%w: %w", domain.ErrGeneration, err)
+		}
 		return domain.Plan{}, err
 	}
 	in := PromptInput{Profile: hh.profile, Sections: hh.sections, Feedback: hh.feedback, Request: prompt, Banned: hh.bannedLines()}
@@ -547,6 +552,10 @@ func loadMeal(ctx context.Context, q *db.Queries, r db.Meal) (domain.Meal, error
 	if m.AfterBabyPortion == nil {
 		m.AfterBabyPortion = []string{}
 	}
+	if r.RecipeID.Valid {
+		id := r.RecipeID.UUID
+		m.RecipeID = &id
+	}
 	for i, in := range ings {
 		m.Ingredients[i] = shopping.IngredientFromDB(in)
 	}
@@ -656,7 +665,7 @@ func ProfileFromDB(p db.Profile) domain.Profile {
 		People:     int(p.People),
 		SpiceLevel: domain.SpiceLevel(p.SpiceLevel), OnePot: p.OnePot, Avoid: []string{}, Shop: p.Shop,
 		ShoppingDay: domain.Weekday(p.ShoppingDay), AutoConfirmTime: ClockText(p.AutoConfirmTime), TimeZone: p.TimeZone,
-		BabyPortions: p.BabyPortions, Language: p.Language,
+		BabyPortions: p.BabyPortions, Language: p.Language, Cuisines: p.Cuisines,
 	}
 	if len(p.ProteinMix) > 0 {
 		_ = json.Unmarshal(p.ProteinMix, &out.ProteinMix) // malformed mix is ignored, not fatal

@@ -108,7 +108,13 @@ func (h *handlers) setup(w http.ResponseWriter, r *http.Request) {
 		}
 		return n
 	}
-	in := domain.SetupInput{MealTargets: map[domain.MealType]int{}, People: num("people"), ShoppingDay: domain.Weekday(r.PostFormValue("shopping_day"))}
+	in := domain.SetupInput{
+		MealTargets:  map[domain.MealType]int{},
+		People:       num("people"),
+		BabyPortions: r.PostFormValue("baby_portions") == "on",
+		ShoppingDay:  domain.Weekday(r.PostFormValue("shopping_day")),
+		Cuisines:     r.PostForm["cuisine"],
+	}
 	for _, t := range domain.PlannedMealTypes {
 		in.MealTargets[t] = num("meals_" + string(t))
 	}

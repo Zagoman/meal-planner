@@ -44,7 +44,7 @@ test("rate the week, add a not-cooked meal back, tweak and add a recipe", async 
   await anna.getByRole("link", { name: "Done" }).click();
   await anna.getByRole("button", { name: "Make next week's plan now" }).click();
   await expect(anna.locator("#draft-card")).toHaveAttribute("data-state", "ready", { timeout: 6_000 });
-  await anna.getByRole("link", { name: "Start review" }).click(); // all rated: straight to the draft
+  await anna.getByRole("link", { name: "Review plan" }).click();
   await expect(anna.getByRole("heading", { name: "Next week", exact: true })).toBeVisible();
   const notCooked = anna.locator("#not-cooked");
   await expect(notCooked).toContainText(notCookedTitle);
@@ -68,4 +68,32 @@ test("rate the week, add a not-cooked meal back, tweak and add a recipe", async 
   await expect(anna.getByRole("heading", { name: /\(tweaked\)$/ })).toBeVisible();
   await anna.getByRole("button", { name: "Add to this week" }).click();
   await expect(anna.locator("#flash")).toContainText("this week's list");
+});
+
+test("the plan screen rates the week, then offers what wasn't cooked, then the draft", async ({ browser }) => {
+  const anna = await login(browser, "anna@example.test");
+  await anna.getByRole("button", { name: "Make next week's plan now" }).click();
+  await expect(anna.locator("#draft-card")).toHaveAttribute("data-state", "ready", { timeout: 6_000 });
+  await anna.getByRole("link", { name: "Review plan" }).click();
+  await expect(anna.getByRole("heading", { name: "Next week", exact: true })).toBeVisible();
+
+  // Rating first, the draft after it.
+  const rate = anna.locator("#rate");
+  await expect(rate.getByRole("heading", { name: "How was this week?" })).toBeVisible();
+  const rateBox = await rate.boundingBox();
+  const draftBox = await anna.locator("#draft-meals").boundingBox();
+  expect(rateBox!.y).toBeLessThan(draftBox!.y);
+
+  // Not cooked moves the meal under "Not cooked last week" at once (a meal
+  // the draft doesn't already have).
+  const draftTitles = await anna.locator("#draft-meals .meal-title").allInnerTexts();
+  const cards = rate.locator("article");
+  let i = 0;
+  while (draftTitles.includes(await cards.nth(i).locator(".meal-title").innerText())) i++;
+  const card = cards.nth(i);
+  const title = await card.locator(".meal-title").innerText();
+  await card.getByRole("button", { name: "Not cooked" }).click();
+  await expect(anna.locator("#not-cooked")).toContainText(title, { timeout: 2_000 });
+  await expect(anna.getByRole("button", { name: "Confirm plan" })).toBeVisible();
+  await expect(anna.getByText(/Confirms itself on \w+ at \d\d:\d\d/)).toBeVisible();
 });

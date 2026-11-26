@@ -114,7 +114,10 @@ new files (`00003_...sql`), never edits to an applied one.
   membership only when the emailed link is used.
 - Server-side fetches of user-given URLs go through `internal/fetch` only
   (public addresses, size and time limits). Uploaded photos go through
-  `internal/imagefit` and are not stored once read.
+  `internal/imagefit`. Import photos are not stored once read; a family's
+  recipe photo is kept (resized) in `recipe_photos` and served only to its
+  household at `/recipes/{id}/photo`. A recipe without a photo shows the
+  line drawing for `domain.DishTypeOf` (derived, never stored).
 - Brand: Hvad skal vi ha'? (`web.AppName`). Colours, type and components
   come from `web/static/hvadskalviha.css` (the design system's tokens; use
   `var(--ink)`, `var(--space-4)`, never hex in templates or `app.css`).

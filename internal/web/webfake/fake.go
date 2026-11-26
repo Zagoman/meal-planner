@@ -721,6 +721,10 @@ func (s *Store) Meal(_ context.Context, sc domain.Scope, mealID uuid.UUID) (doma
 	if !ok {
 		return domain.Meal{}, fmt.Errorf("meal: %w", domain.ErrNotFound)
 	}
+	if r := h.recipeFor(m.Title); r != nil {
+		id := r.ID
+		m.RecipeID = &id
+	}
 	return m, nil
 }
 

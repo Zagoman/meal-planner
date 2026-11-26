@@ -397,3 +397,68 @@ changes only after the app is added again.
 **Known issues**: G-33 to G-39 in GAPS.md; the design deviations are in its
 Deviations table.
 
+
+## Design B – Screen behaviour and copy (branch `design-b-screens`)
+
+**Built**
+
+- Plan screen in one pass (`/plans/next`): "Week N · Draft", then "How was
+  this week?" (1–5 ratings and Not cooked, folded to one line once every
+  meal is answered), then "Not cooked last week" (updated out of band as
+  meals are marked), then the draft with Ask, then "Confirm plan" with
+  "Confirms itself on <day> at <time>". The draft card's button is
+  "Review plan"; `/plans/current/rate` redirects to `/plans/next#rate`
+  while a draft waits. "Here's a first guess…" when there is no plan to rate.
+- Copy states from the handover: empty plan ("Nothing planned yet. Even the
+  fridge is calm."), empty list, list done ("All ticked. Go home, nobody's
+  checking.", also live in `app.js`), generation failed (danger box + Try
+  again), tick save failed (5xx/408/429: queued, retried, line under the
+  row), baby note on recipes with a baby step, "Week N · Confirmed" on the
+  week page.
+- Setup: "Who eats?" with a baby-portions switch (off by default), optional
+  fifth step "Any cuisines you love?" (toggle chips), the AI note.
+  Migration `00007_cuisines.sql` (`profiles.cuisines`), `domain.Cuisines`,
+  validated in the profile service, in the planning prompt, in the API
+  contract and on the Profile page.
+- Accessibility: `#announce` live region says when a plan is ready or
+  failed; boosted page changes focus the page title.
+- One primary button per screen (cook-mode timer, rating saves, Profile's
+  secondary forms are secondary).
+- Fixed: a timeout during the reads of a generation is now an
+  `ErrGeneration` (a flaky test on `main`).
+- Fixed: week numbers (screens and the draft email) count from the middle
+  of the plan week (`domain.WeekNumber`), so Sunday-start weeks get the
+  right number.
+- Tests: plan screen order, out-of-band Not cooked, no-JS return, rating
+  page redirect, setup form and Profile keep cuisines, setup service
+  (dedupe, skip, unknown cuisine, other household untouched), prompt, the
+  flow test (cuisines in the first prompt, first guess), e2e plan screen.
+
+**Known issues**: G-36, G-39 to G-41 in GAPS.md, and the design B
+deviations in its Deviations table.
+
+## Design C – Recipe pictures (same working tree as design B)
+
+**Built**
+
+- Line drawings by dish type (soup, pasta, fish, cake, one-pot, oven dish)
+  from the brand assets, inline SVG in the ink colour so they follow the
+  theme. `domain.DishTypeOf` picks one from the meal: baking is cake, then
+  title words (English and Danish, whole words or compound starts/ends),
+  then fish by protein, one-pot by flag, otherwise the oven dish.
+- The family's photo: "Add your photo" on the meal page and the library
+  recipe page opens the camera or photo library and uploads at once;
+  resized by `imagefit` (JPEG, at most 1600 px) and stored per recipe in
+  `recipe_photos` (migration `00008`, composite FK to recipes, deleted with
+  the recipe). It replaces the drawing (`has-photo`), "Change photo" and
+  "Remove photo" after that. Served at `GET /recipes/{id}/photo?v=<time>`
+  (private, cached for good per version); `POST /recipes/{id}/photo` and
+  `/photo/delete`. Meals carry `recipe_id`, so this week's meals show the
+  photo of their library recipe.
+- `Library.SetPhoto/Photo/PhotoAt/DeletePhoto`, `RecipeDetail.PhotoAt`.
+- Tests: dish types (incl. "avocado" is not cod), photo service (replace,
+  delete, another household gets not found for every call), web upload
+  (not an image refused, resized, served as JPEG, other household 404,
+  remove), the flow test's meal page, the route walk covers the new routes.
+
+**Known issues**: G-42 to G-44 in GAPS.md.

@@ -123,7 +123,7 @@ func HouseholdPage(v householdView) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if v.Scope.IsHouseholdAdmin() {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<section class=\"card\"><h2>Invite someone</h2><form class=\"row\" action=\"/household/invites\" method=\"post\" hx-post=\"/household/invites\" hx-target=\"#invite-result\" hx-swap=\"innerHTML\"><label>Role <select name=\"role\"><option value=\"member\" selected>Member</option> <option value=\"admin\">Admin</option></select></label> <button type=\"submit\">Create invite link</button></form><div id=\"invite-result\"></div></section>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<section class=\"card\"><h2>Invite someone</h2><form class=\"row\" action=\"/household/invites\" method=\"post\" hx-post=\"/household/invites\" hx-target=\"#invite-result\" hx-swap=\"innerHTML\"><label>Role <select name=\"role\"><option value=\"member\" selected>Member</option> <option value=\"admin\">Admin</option></select></label> <button type=\"submit\" class=\"secondary-btn\">Create invite link</button></form><div id=\"invite-result\"></div></section>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -189,12 +189,12 @@ func HouseholdPage(v householdView) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " <section class=\"card\"><h2>API tokens</h2><p class=\"muted small\">For scripts that use the JSON API. A token acts as you in this household.</p><form class=\"row\" action=\"/household/tokens\" method=\"post\" hx-post=\"/household/tokens\" hx-target=\"#token-result\" hx-swap=\"innerHTML\"><label>Name <input name=\"name\" required maxlength=\"60\" placeholder=\"e.g. kitchen tablet\"></label> <button type=\"submit\">Create token</button></form><div id=\"token-result\"></div></section>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " <section class=\"card\"><h2>API tokens</h2><p class=\"muted small\">For scripts that use the JSON API. A token acts as you in this household.</p><form class=\"row\" action=\"/household/tokens\" method=\"post\" hx-post=\"/household/tokens\" hx-target=\"#token-result\" hx-swap=\"innerHTML\"><label>Name <input name=\"name\" required maxlength=\"60\" placeholder=\"e.g. kitchen tablet\"></label> <button type=\"submit\" class=\"secondary-btn\">Create token</button></form><div id=\"token-result\"></div></section>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if v.CanChangePassword {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<section class=\"card\"><h2>Change password</h2><form class=\"stack\" action=\"/household/password\" method=\"post\" hx-post=\"/household/password\" hx-target=\"#password-result\" hx-swap=\"innerHTML\" hx-on::after-request=\"if(event.detail.successful) this.reset()\"><label>Current password <input type=\"password\" name=\"current_password\" required autocomplete=\"current-password\"></label> <label>New password <input type=\"password\" name=\"new_password\" required minlength=\"8\" maxlength=\"72\" autocomplete=\"new-password\"></label> <label>New password again <input type=\"password\" name=\"confirm_password\" required minlength=\"8\" maxlength=\"72\" autocomplete=\"new-password\"></label> <button type=\"submit\">Change password</button></form><div id=\"password-result\" role=\"status\"></div></section>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<section class=\"card\"><h2>Change password</h2><form class=\"stack\" action=\"/household/password\" method=\"post\" hx-post=\"/household/password\" hx-target=\"#password-result\" hx-swap=\"innerHTML\" hx-on::after-request=\"if(event.detail.successful) this.reset()\"><label>Current password <input type=\"password\" name=\"current_password\" required autocomplete=\"current-password\"></label> <label>New password <input type=\"password\" name=\"new_password\" required minlength=\"8\" maxlength=\"72\" autocomplete=\"new-password\"></label> <label>New password again <input type=\"password\" name=\"confirm_password\" required minlength=\"8\" maxlength=\"72\" autocomplete=\"new-password\"></label> <button type=\"submit\" class=\"secondary-btn\">Change password</button></form><div id=\"password-result\" role=\"status\"></div></section>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

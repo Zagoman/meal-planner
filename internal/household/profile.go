@@ -85,6 +85,7 @@ func (s *Service) Put(ctx context.Context, sc domain.Scope, p domain.Profile) (d
 			BabyPortions:    p.BabyPortions,
 			Language:        p.Language,
 			AutoConfirmTime: clock,
+			Cuisines:        p.Cuisines,
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.ErrNotFound
@@ -153,6 +154,16 @@ func cleanProfile(p domain.Profile) (domain.Profile, error) {
 	if !p.ShoppingDay.Valid() {
 		problems = append(problems, "shopping_day: a lowercase English weekday")
 	}
+	cuisines := []string{}
+	for _, c := range p.Cuisines {
+		switch {
+		case !slices.Contains(domain.Cuisines, c):
+			problems = append(problems, fmt.Sprintf("cuisines: unknown cuisine %q", c))
+		case !slices.Contains(cuisines, c):
+			cuisines = append(cuisines, c)
+		}
+	}
+	p.Cuisines = cuisines
 	if strings.TrimSpace(p.AutoConfirmTime) == "" {
 		p.AutoConfirmTime = "08:00"
 	}
@@ -267,6 +278,7 @@ func profileFromDB(p db.Profile) (domain.Profile, error) {
 		SetupDone:       p.SetupDone,
 		BabyPortions:    p.BabyPortions,
 		Language:        p.Language,
+		Cuisines:        p.Cuisines,
 	}, nil
 }
 
@@ -500,15 +512,17 @@ func (s *Service) PutPantry(ctx context.Context, sc domain.Scope, names []string
 	return out, nil
 }
 
-// Setup saves the four setup questions: meal counts, people, foods never
-// eaten (added to the avoid list with source "setup") and shopping day.
-// Everything else keeps its default. The household is then set up.
+// Setup saves the setup questions: meal counts, people and baby portions,
+// foods never eaten (added to the avoid list with source "setup"), shopping
+// day and, optionally, cuisines the family loves. Everything else keeps its
+// default. The household is then set up.
 func (s *Service) Setup(ctx context.Context, sc domain.Scope, in domain.SetupInput) (domain.Profile, error) {
 	p, err := s.Get(ctx, sc)
 	if err != nil {
 		return domain.Profile{}, err
 	}
 	p.MealTargets, p.People, p.ShoppingDay = in.MealTargets, in.People, in.ShoppingDay
+	p.BabyPortions, p.Cuisines = in.BabyPortions, in.Cuisines
 	p.Avoid = nil // added one by one below, with source "setup"
 	if _, err := cleanProfile(p); err != nil {
 		return domain.Profile{}, err

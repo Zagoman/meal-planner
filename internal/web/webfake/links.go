@@ -131,9 +131,10 @@ func (s *Store) Setup(_ context.Context, sc domain.Scope, in domain.SetupInput) 
 		total += n
 	}
 	if total == 0 || in.People < 1 || in.People > 12 || !in.ShoppingDay.Valid() {
-		return domain.Profile{}, &domain.ValidationError{Problems: []string{"answer all four questions"}}
+		return domain.Profile{}, &domain.ValidationError{Problems: []string{"answer the setup questions"}}
 	}
 	h.profile.MealTargets, h.profile.People, h.profile.ShoppingDay = in.MealTargets, in.People, in.ShoppingDay
+	h.profile.BabyPortions, h.profile.Cuisines = in.BabyPortions, in.Cuisines
 	for _, a := range in.Avoid {
 		h.addAvoid(a, domain.AvoidFromSetup)
 	}

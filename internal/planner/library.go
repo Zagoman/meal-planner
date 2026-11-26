@@ -259,6 +259,9 @@ func (s *Service) RecipeDetail(ctx context.Context, sc domain.Scope, recipeID uu
 	case !errors.Is(err, pgx.ErrNoRows):
 		return domain.RecipeDetail{}, fmt.Errorf("tweak job: %w", err)
 	}
+	if d.PhotoAt, err = photoAt(ctx, q, sc.HouseholdID, recipeID); err != nil {
+		return domain.RecipeDetail{}, err
+	}
 	return d, nil
 }
 

@@ -198,7 +198,7 @@ your accounts.
    On the server: `cd /opt/stacks && git pull`, then re-run the playbook
    (`ansible-playbook playbooks/site.yml`) so `.env` gets the key, and
    `make deploy-only` (or `docker compose up -d` in the stack) to restart
-   the app with it. The sender is `Meal Planner <meals@liluhome.dk>`; change
+   the app with it. The sender is `Hvad skal vi ha'? <meals@liluhome.dk>`; change
    `EMAIL_FROM` in the patch if you verified a subdomain.
 5. **Check.** On the login page, "Email me a sign-in link" with your
    address; the app log shows no "email not sent" warning.
