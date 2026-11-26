@@ -526,7 +526,11 @@ From the "Shopping list fixes — dev handoff"
   "Add your name" inline (`Households.SetMyName`), recipe language select.
 - Service worker cache v5.
 
-**Deploy note**: migrations 9 and 10 go out together (production is at 8).
+**Deployed** 2026-11-26 as `685881e2f2d4`. Dump first:
+`mealplanner-20261126-205401.dump`. Migrations 9 and 10 applied together;
+the library back-fill put the 4 cooked recipes in Recipes (32 recipes kept,
+none deleted); plans and list unchanged (1 active, 1 draft, 6 archived,
+188 list items, 37 ticked, none cleared).
 
 **Known issues**: G-49 to G-54 in GAPS.md; the round's deviations are in
 its Deviations table. Still to build: #2, #3, #5 (G-49).
