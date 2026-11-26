@@ -1346,3 +1346,28 @@ func pngEncode(out io.Writer, w, h int) error {
 	}
 	return png.Encode(out, img)
 }
+
+// The entry splash is only in full page loads, never in htmx responses
+// (a boosted link swaps the body, so it would come back mid-session).
+func TestSplashOnlyOnFullLoads(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	anna := f.session(f.seed.Anna)
+	full := f.do(t, req{path: "/week", session: anna}).Body.String()
+	mustContain(t, "full load", full, `id="splash"`, `class="hsv-splash"`, "En madplan, der kender jer.", `sessionStorage`)
+	if i, j := strings.Index(full, "<body"), strings.Index(full, `id="splash"`); j < i || strings.Index(full, `id="main"`) < j {
+		t.Error("splash is not first in the body")
+	}
+	r := httptest.NewRequest("GET", origin+"/week", nil)
+	r.Header.Set("HX-Request", "true")
+	r.Header.Set("HX-Boosted", "true")
+	r.AddCookie(&http.Cookie{Name: web.CookieName, Value: anna})
+	w := httptest.NewRecorder()
+	f.h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "hsv-splash") {
+		t.Errorf("boosted page: %d, splash=%v", w.Code, strings.Contains(w.Body.String(), "hsv-splash"))
+	}
+	if strings.Contains(f.do(t, req{path: "/plans/next/card", session: anna, hx: true}).Body.String(), "hsv-splash") {
+		t.Error("splash in an htmx partial")
+	}
+}

@@ -219,7 +219,13 @@ func (h *handlers) render(w http.ResponseWriter, r *http.Request, status int, c 
 		w.Header().Set("Cache-Control", "private, no-cache")
 	}
 	w.WriteHeader(status)
-	if err := c.Render(r.Context(), w); err != nil {
+	ctx := r.Context()
+	if r.Header.Get("HX-Request") != "true" {
+		// A full page load (not an htmx swap or a boosted link): the only
+		// kind that may show the entry splash.
+		ctx = context.WithValue(ctx, fullLoadKey{}, true)
+	}
+	if err := c.Render(ctx, w); err != nil {
 		slog.ErrorContext(r.Context(), "render", "path", r.URL.Path, "err", err)
 	}
 }

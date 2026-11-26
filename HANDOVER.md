@@ -469,3 +469,24 @@ plans, list and library unchanged (1 active, 6 archived, 188 list items,
 stylesheet and script for one more visit before the background refresh.
 
 **Known issues**: G-42 to G-47 in GAPS.md.
+
+## Design D – Entry screen (branch `design-d-splash`)
+
+Added to the design handover after the first version: the splash.
+
+**Built**
+
+- `Splash` (brand.templ), first in `<body>`: the mark draws itself, the
+  bowl drops in and settles, name and Danish tagline fade in, the screen
+  fades out at 2.0–2.5 s (1 s with reduced motion) and is then removed.
+  Styles from the design system's Splash component, in `hvadskalviha.css`.
+- Once per browser session (`sessionStorage`, guarded); rendered only on
+  full page loads (`handlers.render` marks them), so htmx swaps and
+  boosted links never bring it back.
+- Service worker cache v4, so phones pick up the new stylesheet (and B
+  and C's) on the next visit.
+- Tests: full load vs boosted and partial responses; e2e: shown once,
+  gone and tappable after it fades, back in a new session, reduced motion.
+  The other e2e tests mark it seen.
+
+**Known issues**: G-48 in GAPS.md.

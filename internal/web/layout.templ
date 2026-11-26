@@ -75,6 +75,7 @@ templ page(title string, active Tab, back, backLabel string, showNav bool) {
 			<script src="/static/app.js" defer></script>
 		</head>
 		<body hx-boost="true" data-signed-in?={ active != TabNone } class={ "has-speckle", templ.KV("full", !showNav && active != TabNone) }>
+			@Splash()
 			if back != "" {
 				<nav class="back"><a href={ templ.SafeURL(back) }>‹ { backLabel }</a></nav>
 			}

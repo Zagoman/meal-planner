@@ -5,6 +5,8 @@ const PASSWORD = "correct horse";
 
 async function login(browser: Browser, email: string, serviceWorkers: "allow" | "block" = "allow"): Promise<Page> {
   const ctx = await browser.newContext({ serviceWorkers });
+  // The entry splash covers the page for 2.5 s; splash.spec.ts tests it.
+  await ctx.addInitScript(() => { try { sessionStorage.setItem("splash", "1"); } catch {} });
   const page = await ctx.newPage();
   await page.goto("/");
   await expect(page).toHaveURL(/\/login/);
@@ -94,7 +96,7 @@ test("a tick on one phone shows up live on the other, also after being offline",
   await expect.poll(() => ben.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 10_000 }).toBe(true);
   await ben.reload();
   const cached = await ben.evaluate(async () => {
-    const res = await caches.match("/", { cacheName: "mp-pages-v3" });
+    const res = await caches.match("/", { cacheName: "mp-pages-v4" });
     return res ? res.text() : "";
   });
   expect(cached).toContain("Shopping list");

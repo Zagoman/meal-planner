@@ -2,7 +2,7 @@
 
 Everything known to be missing, rough or different from the dev handoff
 and from the design handover (Hvad skal vi ha'?; "Found" `DA` is design
-step A, `DB` step B, `DC` step C), in one place. Add a row when you find one; move it to **Fixed**
+step A, `DB` step B, `DC` step C, `DD` the splash), in one place. Add a row when you find one; move it to **Fixed**
 (with the commit) when it is done. `HANDOVER.md` says what each window built; this
 file is the to-do list that outlives the windows.
 
@@ -60,6 +60,7 @@ IDs are stable: refer to a gap as `G-12` in commits and issues.
 | G-45 | FAQ | No FAQ page. The design handover says AI is mentioned "in onboarding and FAQ"; only the setup note exists. | Nowhere to read how plans are made or what the family's details are used for after setup. | A short FAQ page in the brand voice, linked from Profile. | DC |
 | G-46 | Brand | The new look is checked in the preview browser only, not on a phone (fonts, speckle, safe areas, the bar colour, the home-screen icon). | Something may look off on a real device. | Open it on an iPhone and an Android phone; re-add the home-screen app. | DC |
 | G-47 | Test fake | The e2e fake gives a new draft the same week start as the current plan, so both show the same week number in the preview. | Preview and e2e only; the real planner is right. | Start fake drafts on the next shopping day. | DC |
+| G-48 | Splash | The installed app usually starts a new browser session at each launch, so the 2.5 s splash shows every time it is opened from the home screen (the app loads behind it). | A short wait on each open. | If it feels slow, keep the "seen" mark for a few hours in `localStorage` instead of per session. | DD |
 
 ### Later (the design handover says not yet)
 
@@ -113,6 +114,7 @@ is "Don't build yet" in `CLAUDE.md`.
 | Empty plan (design) | heading + primary "Make a plan" | heading; the draft card above has the one "Make next week's plan now" button | One primary per screen. |
 | Dish type (design) | a recipe's dish type picks its drawing | worked out from the meal (`domain.DishTypeOf`), not stored or asked of the AI | No change to the meal schema or the prompt; good enough for six drawings. |
 | Photo upload (design) | "Add your photo" secondary button | the button opens the camera or library and uploads at once (no-JS: an Upload button); "Remove photo" is a link | One tap, like the recipe import. |
+| Splash (design) | the markup and an inline script first in `<body>` on every page | rendered only on full page loads (not htmx or boosted responses), removed after it fades; `sessionStorage` guarded for private mode | A boosted link swaps the whole body, so the splash would otherwise come back on every page change. |
 
 ## Fixed
 

@@ -6,6 +6,8 @@ const PASSWORD = "correct horse";
 
 async function login(browser: Browser, email: string): Promise<Page> {
   const ctx = await browser.newContext({ serviceWorkers: "block" });
+  // The entry splash covers the page for 2.5 s; splash.spec.ts tests it.
+  await ctx.addInitScript(() => { try { sessionStorage.setItem("splash", "1"); } catch {} });
   const page = await ctx.newPage();
   await page.goto("/week");
   await expect(page).toHaveURL(/\/login/);

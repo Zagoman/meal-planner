@@ -10,6 +10,7 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 import (
+	"context"
 	"strings"
 	"unicode/utf8"
 )
@@ -19,6 +20,46 @@ const (
 	AppName      = "Hvad skal vi ha'?"
 	AppShortName = "hvadskalviha"
 )
+
+// fullLoadKey marks a render for a full page load (see handlers.render).
+type fullLoadKey struct{}
+
+func isFullLoad(ctx context.Context) bool {
+	v, _ := ctx.Value(fullLoadKey{}).(bool)
+	return v
+}
+
+// Splash is the entry screen (design handover): the mark draws itself, the
+// bowl drops in, the name and tagline fade in, then it fades away after
+// 2 s (1 s with reduced motion). It is rendered only on full page loads, so
+// htmx swaps and boosted links never bring it back, and shown once per
+// browser session; it never blocks taps once faded, and is then removed.
+func Splash() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		ctx = templ.ClearChildren(ctx)
+		if isFullLoad(ctx) {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"hsv-splash\" id=\"splash\" aria-hidden=\"true\"><svg class=\"hsv-mark\" width=\"96\" height=\"96\" viewBox=\"0 0 44 44\"><path class=\"hsv-mark__line hsv-splash__line\" pathLength=\"100\" d=\"M3 36H16A12 12 0 1 1 16 12A12 12 0 1 1 16 36H41\"></path> <path class=\"hsv-mark__bowl hsv-splash__bowl\" d=\"M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z\"></path></svg><p class=\"hsv-splash__name\">Hvad skal vi <em>ha'?</em></p><p class=\"hsv-splash__tag\" lang=\"da\">En madplan, der kender jer.</p></div><script>\n\t\t\t(function () {\n\t\t\t\tvar s = document.getElementById(\"splash\");\n\t\t\t\tvar seen = false;\n\t\t\t\ttry {\n\t\t\t\t\tseen = sessionStorage.getItem(\"splash\") === \"1\";\n\t\t\t\t\tsessionStorage.setItem(\"splash\", \"1\");\n\t\t\t\t} catch (e) {}\n\t\t\t\tif (seen) { s.remove(); return; }\n\t\t\t\ts.addEventListener(\"animationend\", function (e) { if (e.target === s) s.remove(); });\n\t\t\t})();\n\t\t</script>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		return nil
+	})
+}
 
 // Mark is the brand mark as inline SVG, so it follows the theme. size is
 // in px; under 24 px use the favicon instead.
@@ -39,46 +80,46 @@ func Mark(size int) templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<svg class=\"hsv-mark\" width=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var2 string
-		templ_7745c5c3_Var2, templ_7745c5c3_Err = templruntime.NewAttributeExpression(itoa(size)).Resolve(ctx)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 17, Col: 41}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" height=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<svg class=\"hsv-mark\" width=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templruntime.NewAttributeExpression(itoa(size)).Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 17, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 56, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" viewBox=\"0 0 44 44\" role=\"img\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" height=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templruntime.NewAttributeExpression(AppName).Resolve(ctx)
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templruntime.NewAttributeExpression(itoa(size)).Resolve(ctx)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 17, Col: 117}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 56, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><path class=\"hsv-mark__line\" d=\"M3 36H16A12 12 0 1 1 16 12A12 12 0 1 1 16 36H29.5A8.5 8.5 0 0 1 21 27.5H38A8.5 8.5 0 0 1 29.5 36H41\"></path> <path class=\"hsv-mark__bowl\" d=\"M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z\"></path></svg>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" viewBox=\"0 0 44 44\" role=\"img\" aria-label=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 string
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templruntime.NewAttributeExpression(AppName).Resolve(ctx)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 56, Col: 117}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><path class=\"hsv-mark__line\" d=\"M3 36H16A12 12 0 1 1 16 12A12 12 0 1 1 16 36H29.5A8.5 8.5 0 0 1 21 27.5H38A8.5 8.5 0 0 1 29.5 36H41\"></path> <path class=\"hsv-mark__bowl\" d=\"M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z\"></path></svg>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -109,25 +150,25 @@ func Loader(label string, indicator bool) templ.Component {
 			templ_7745c5c3_ElementWriter := templ_7745c5c3_Buffer
 			templ_7745c5c3_Buffer := templ.GetBuffer()
 			var templ_7745c5c3_ElementScripts []templ.ComponentScript
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<span class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<span class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var6 = []any{"hsv-loader-wrap", templ.KV("htmx-indicator", indicator)}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_ElementWriter, templ_7745c5c3_Var6...)
+			var templ_7745c5c3_Var7 = []any{"hsv-loader-wrap", templ.KV("htmx-indicator", indicator)}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_ElementWriter, templ_7745c5c3_Var7...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var7 string
-			templ_7745c5c3_Var7, templ_7745c5c3_Err = templruntime.NewAttributeExpression(templ.CSSClasses(templ_7745c5c3_Var6).String()).Resolve(ctx)
+			var templ_7745c5c3_Var8 string
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templruntime.NewAttributeExpression(templ.CSSClasses(templ_7745c5c3_Var7).String()).Resolve(ctx)
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" role=\"status\" aria-live=\"polite\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" role=\"status\" aria-live=\"polite\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -141,35 +182,35 @@ func Loader(label string, indicator bool) templ.Component {
 			}
 			templ.ReleaseBuffer(templ_7745c5c3_Buffer)
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "><svg class=\"hsv-mark hsv-loader hsv-loader--draw-rock\" width=\"64\" height=\"64\" viewBox=\"0 0 44 44\" aria-hidden=\"true\"><path class=\"hsv-mark__line hsv-loader__line\" pathLength=\"100\" d=\"M3 36H16A12 12 0 1 1 16 12A12 12 0 1 1 16 36H41\"></path> <path class=\"hsv-mark__bowl hsv-loader__bowl\" d=\"M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z\"></path></svg> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "><svg class=\"hsv-mark hsv-loader hsv-loader--draw-rock\" width=\"64\" height=\"64\" viewBox=\"0 0 44 44\" aria-hidden=\"true\"><path class=\"hsv-mark__line hsv-loader__line\" pathLength=\"100\" d=\"M3 36H16A12 12 0 1 1 16 12A12 12 0 1 1 16 36H41\"></path> <path class=\"hsv-mark__bowl hsv-loader__bowl\" d=\"M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z\"></path></svg> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if label != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<span class=\"hsv-loader__label\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<span class=\"hsv-loader__label\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var8 string
-			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(label)
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 32, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 71, Col: 42}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<span class=\"hsv-visually-hidden\">Loading</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<span class=\"hsv-visually-hidden\">Loading</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -196,7 +237,7 @@ func Rock() templ.Component {
 		}
 		ctx = templ.InitializeContext(ctx)
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<span class=\"spinner\" aria-hidden=\"true\"><svg class=\"hsv-mark hsv-loader hsv-loader--rock\" width=\"24\" height=\"24\" viewBox=\"0 0 44 44\"><path class=\"hsv-mark__line\" stroke-width=\"2.5\" d=\"M3 36H41\"></path> <circle class=\"hsv-mark__line\" stroke-width=\"2.5\" cx=\"16\" cy=\"24\" r=\"12\"></circle> <path class=\"hsv-mark__bowl hsv-loader__bowl\" stroke-width=\"2.5\" d=\"M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z\"></path></svg></span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<span class=\"spinner\" aria-hidden=\"true\"><svg class=\"hsv-mark hsv-loader hsv-loader--rock\" width=\"24\" height=\"24\" viewBox=\"0 0 44 44\"><path class=\"hsv-mark__line\" stroke-width=\"2.5\" d=\"M3 36H41\"></path> <circle class=\"hsv-mark__line\" stroke-width=\"2.5\" cx=\"16\" cy=\"24\" r=\"12\"></circle> <path class=\"hsv-mark__bowl hsv-loader__bowl\" stroke-width=\"2.5\" d=\"M21 27.5H38A8.5 8.5 0 0 1 21 27.5Z\"></path></svg></span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -226,39 +267,39 @@ func Title(s string) templ.Component {
 		ctx = templ.ClearChildren(ctx)
 		head, last := splitLastWord(s)
 		if head == "" {
-			var templ_7745c5c3_Var11 string
-			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(s)
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 57, Col: 5}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
 			var templ_7745c5c3_Var12 string
-			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(head)
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(s)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 59, Col: 8}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 96, Col: 5}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<em>")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
+		} else {
 			var templ_7745c5c3_Var13 string
-			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(last)
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(head)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 59, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 98, Col: 8}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</em>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<em>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var14 string
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(last)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/brand.templ`, Line: 98, Col: 20}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</em>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
