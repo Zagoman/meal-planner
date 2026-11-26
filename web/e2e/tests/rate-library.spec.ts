@@ -30,6 +30,7 @@ test("rate the week, add a not-cooked meal back, tweak and add a recipe", async 
   await expect(anna.getByRole("heading", { name: "How was this week?" })).toBeVisible();
   const cards = anna.locator(".rate-list article");
   const n = await cards.count();
+  const cookedTitle = await cards.nth(0).locator(".meal-title").innerText();
   const notCookedTitle = await cards.nth(1).locator(".meal-title").innerText();
   for (let i = 0; i < n; i++) {
     if (i === 1) {
@@ -55,9 +56,13 @@ test("rate the week, add a not-cooked meal back, tweak and add a recipe", async 
   await expect(anna.locator("#draft-meals")).toContainText(notCookedTitle, { timeout: 2_000 });
   await expect(anna.locator("#not-cooked")).not.toContainText(notCookedTitle);
 
-  // Library: search, open a recipe, tweak it, add the tweak to this week.
+  // Library: only the cooked meals are in it. Search, open a recipe, tweak
+  // it, add the tweak to this week.
   await anna.goto("/recipes");
-  const first = notCookedTitle.split(" ")[0];
+  await expect(anna.locator("#recipe-results")).toContainText(cookedTitle);
+  await expect(anna.locator("#recipe-results")).not.toContainText(notCookedTitle);
+  await expect(anna.locator("#recipe-results")).not.toContainText("Planned");
+  const first = cookedTitle.split(" ")[0];
   await anna.getByLabel("Search recipes").fill(first);
   await expect(anna.locator("#recipe-results .rec").first()).toContainText(first, { timeout: 2_000 });
   await anna.locator("#recipe-results .rec").first().click();
@@ -98,4 +103,18 @@ test("the plan screen rates the week, then offers what wasn't cooked, then the d
   await expect(anna.locator("#not-cooked")).toContainText(title, { timeout: 2_000 });
   await expect(anna.getByRole("button", { name: "Confirm plan" })).toBeVisible();
   await expect(anna.getByText(/Confirms itself on \w+ at \d\d:\d\d/)).toBeVisible();
+});
+
+test("save a planned meal to recipes from its page", async ({ browser }) => {
+  const anna = await login(browser, "anna@example.test");
+  await anna.goto("/recipes");
+  await expect(anna.locator("#recipe-results")).toContainText("No recipes found");
+  await anna.goto("/week");
+  const meal = anna.locator("a[href^='/meals/']").first();
+  await meal.click();
+  const title = await anna.getByRole("heading", { level: 1 }).innerText();
+  await anna.getByRole("button", { name: "Save to recipes" }).click();
+  await expect(anna.locator("#save-recipe")).toContainText("In your recipes");
+  await anna.goto("/recipes");
+  await expect(anna.locator("#recipe-results")).toContainText(title);
 });

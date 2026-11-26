@@ -178,7 +178,7 @@ func (s *Store) addOwn(sc domain.Scope, r domain.MealJSON, source domain.RecipeS
 	if err != nil {
 		return domain.Recipe{}, err
 	}
-	rec := domain.Recipe{ID: uuid.New(), Source: source, CreatedAt: time.Now(), Meal: domain.Meal{
+	rec := domain.Recipe{ID: uuid.New(), Source: source, InLibrary: true, CreatedAt: time.Now(), Meal: domain.Meal{
 		MealType: r.MealType, Title: r.Title, Protein: r.Protein, Minutes: r.Minutes, OnePot: r.OnePot, Servings: r.Servings,
 		Ingredients: ings, Steps: steps, AfterBabyPortion: []string{},
 	}}

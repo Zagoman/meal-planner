@@ -236,9 +236,8 @@ func TestSecondHouseholdJoinsAndShops(t *testing.T) {
 	}
 	// Every web route with an id, called as household A with each of B's
 	// ids: never a success with content. Routes added later are covered.
-	recipes, _ := services.Library.Search(ctx, domain.Scope{HouseholdID: h.ID}, "", domain.FilterAll)
 	avoid, _ := services.Profiles.AvoidItems(ctx, domain.Scope{HouseholdID: h.ID})
-	bIDs := []string{mealID, ids[0][1], recipes[0].ID.String(), avoid[0].ID.String(), h.ID.String()}
+	bIDs := []string{mealID, ids[0][1], cur.Meals[0].RecipeID.String(), avoid[0].ID.String(), h.ID.String()}
 	routes, ok := web.Routes(app.Deps{Config: config.Config{BaseURL: base}, Services: services, Events: hub}).(chi.Routes)
 	if !ok {
 		t.Fatal("web routes are not a chi router")

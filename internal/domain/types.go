@@ -271,8 +271,11 @@ type Meal struct {
 	Ingredients      []Ingredient `json:"ingredients"`
 	Steps            []Step       `json:"steps"`
 	AfterBabyPortion []string     `json:"after_baby_portion"`
-	// RecipeID is the library recipe this meal is saved as (its photo).
+	// RecipeID is the recipe this meal is linked to (its photo).
 	RecipeID *uuid.UUID `json:"recipe_id,omitempty"`
+	// InLibrary is whether that recipe is in the household's library
+	// (cooked, saved or added). Set by Plans.Meal only.
+	InLibrary bool `json:"in_library,omitempty"`
 }
 
 type Ingredient struct {
@@ -367,6 +370,7 @@ type Recipe struct {
 	SourceMealID *uuid.UUID   `json:"source_meal_id,omitempty"`
 	Source       RecipeSource `json:"source"`
 	ParentID     *uuid.UUID   `json:"parent_recipe_id,omitempty"` // set on a tweaked version
+	InLibrary    bool         `json:"in_library"`                 // shown in /recipes
 	Meal         Meal         `json:"meal"`
 	CreatedAt    time.Time    `json:"created_at"`
 }

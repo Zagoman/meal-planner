@@ -24,7 +24,30 @@ templ MealPage(m domain.Meal, pic recipePic) {
 		</details>
 		<div class="recipe-foot">
 			<a class="button primary wide" href={ templ.SafeURL("/meals/" + m.ID.String() + "/cook") }>Start cooking</a>
+			@SaveToRecipes(m)
 		</div>
+	}
+}
+
+// SaveToRecipes puts a planned meal in the recipe library on purpose; a
+// meal also joins it when it is rated as cooked.
+templ SaveToRecipes(m domain.Meal) {
+	if m.InLibrary && m.RecipeID != nil {
+		<p id="save-recipe" class="small center" role="status">
+			<span class="saved">In your recipes</span> · <a href={ templ.SafeURL("/recipes/" + m.RecipeID.String()) }>Open it</a>
+		</p>
+	} else {
+		<form
+			id="save-recipe"
+			action={ templ.SafeURL("/meals/" + m.ID.String() + "/save") }
+			method="post"
+			hx-post={ "/meals/" + m.ID.String() + "/save" }
+			hx-target="this"
+			hx-swap="outerHTML"
+			hx-disinherit="*"
+		>
+			<button type="submit" class="secondary-btn wide">Save to recipes</button>
+		</form>
 	}
 }
 

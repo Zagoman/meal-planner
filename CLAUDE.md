@@ -84,8 +84,14 @@ new files (`00003_...sql`), never edits to an applied one.
 - Meals have a `meal_type` (breakfast, lunch, dinner, baking, other). The
   profile's `meal_targets` sets how many of each a week holds; a plan must
   match them exactly.
-- Every meal Claude plans is saved to the recipe library (`linkRecipe`) and
-  linked by `meals.recipe_id`. Outcomes (`meal_outcomes`, one per meal) say
+- Every meal Claude plans is linked to a recipe by `meals.recipe_id`
+  (`linkRecipe`: a library recipe of the same type and title first), but
+  only `recipes.in_library` rows are in the library (`/recipes`,
+  `Library.Search`): a meal rated as cooked, saved with "Save to recipes"
+  (`Library.SaveMeal`), a recipe the household added, or a tweaked version.
+  Others still open by id (past plans, "not cooked last week"); never
+  delete them. The planning prompt lists the library's titles to reuse.
+  Outcomes (`meal_outcomes`, one per meal) say
   cooked + rating or not cooked; recipes rated 1 and last week's not-cooked
   meals are banned in prompts and validation (`household.banned`).
 - The avoid list is the `avoid_items` table (unique per household on

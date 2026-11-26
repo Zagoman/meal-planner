@@ -180,7 +180,39 @@ var recipeFilters = []struct {
 	{"baking", "Baking"},
 }
 
-templ RecipesPage(q string, filter domain.RecipeFilter, recipes []domain.RecipeSummary) {
+// shownFilters are the chips that would list something; "All" and the
+// chosen one always show.
+func shownFilters(filter domain.RecipeFilter, has map[domain.RecipeFilter]bool) []struct {
+	key   domain.RecipeFilter
+	label string
+} {
+	out := recipeFilters[:0:0]
+	for _, f := range recipeFilters {
+		if f.key == domain.FilterAll || f.key == filter || has[f.key] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// libraryFilters says which filters list at least one of the library's
+// recipes (all of them, unfiltered).
+func libraryFilters(all []domain.RecipeSummary) map[domain.RecipeFilter]bool {
+	has := map[domain.RecipeFilter]bool{}
+	for _, r := range all {
+		has[domain.FilterAll] = true
+		has[domain.RecipeFilter(r.MealType)] = true
+		if r.Source != domain.SourceClaude {
+			has[domain.FilterOwn] = true
+		}
+		if r.Ratings > 0 && r.Rating >= 4 {
+			has[domain.FilterRated4] = true
+		}
+	}
+	return has
+}
+
+templ RecipesPage(q string, filter domain.RecipeFilter, recipes []domain.RecipeSummary, has map[domain.RecipeFilter]bool) {
 	@Layout("Recipes", TabRecipes) {
 		<p class="page-action"><a class="button secondary-btn" href="/recipes/add">Add recipe</a></p>
 		<form class="search" action="/recipes" method="get" hx-get="/recipes" hx-target="#recipe-results" hx-swap="outerHTML" hx-push-url="true"
@@ -191,7 +223,7 @@ templ RecipesPage(q string, filter domain.RecipeFilter, recipes []domain.RecipeS
 				<input id="recipe-q" name="q" type="search" value={ q } placeholder="Search recipes or ingredients" autocomplete="off"/>
 			</label>
 			<div class="chips filters" role="radiogroup" aria-label="Filter">
-				for _, f := range recipeFilters {
+				for _, f := range shownFilters(filter, has) {
 					<label class="chip">
 						<input type="radio" name="filter" value={ string(f.key) } checked?={ f.key == filter }/>
 						{ f.label }
@@ -207,7 +239,7 @@ templ RecipesPage(q string, filter domain.RecipeFilter, recipes []domain.RecipeS
 templ RecipeResults(recipes []domain.RecipeSummary) {
 	<div id="recipe-results" class="recipes">
 		if len(recipes) == 0 {
-			<p class="empty muted">No recipes found. Every meal we plan is saved here.</p>
+			<p class="empty muted">No recipes found. Meals you cook and rate, meals you save and recipes you add are kept here.</p>
 		}
 		for _, r := range recipes {
 			<a class="rec" href={ templ.SafeURL("/recipes/" + r.ID.String()) }>
@@ -215,13 +247,11 @@ templ RecipeResults(recipes []domain.RecipeSummary) {
 					<span class="meal-title">{ r.Title }</span>
 					<span class="small muted">{ recipeLine(r.MealType, r.RecipeStats) }</span>
 				</span>
-				<span class="src">
-					if r.Tweaked {
-						Tweaked
-					} else {
-						{ r.Source.Label() }
-					}
-				</span>
+				if r.Tweaked {
+					<span class="src">Tweaked</span>
+				} else if r.Source.Label() != "" {
+					<span class="src">{ r.Source.Label() }</span>
+				}
 			</a>
 		}
 	</div>

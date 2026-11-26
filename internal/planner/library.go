@@ -154,8 +154,22 @@ func (s *Service) SetOutcome(ctx context.Context, sc domain.Scope, mealID uuid.U
 	default:
 		return domain.RateMeal{}, &domain.ValidationError{Problems: []string{"rate the meal or mark it not cooked first"}}
 	}
-	if _, err := q.UpsertOutcome(ctx, params); err != nil {
-		return domain.RateMeal{}, fmt.Errorf("outcome: %w", err)
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		qt := q.WithTx(tx)
+		if _, err := qt.UpsertOutcome(ctx, params); err != nil {
+			return fmt.Errorf("outcome: %w", err)
+		}
+		if params.Status != string(domain.Cooked) {
+			return nil
+		}
+		// A cooked meal's recipe joins the library.
+		if err := qt.SetMealRecipeInLibrary(ctx, db.SetMealRecipeInLibraryParams{MealID: mealID, HouseholdID: sc.HouseholdID}); err != nil {
+			return fmt.Errorf("outcome: library: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.RateMeal{}, err
 	}
 	return s.rateMeal(ctx, q, m)
 }
@@ -340,6 +354,44 @@ func (s *Service) runTweak(ctx context.Context, job db.Job) (any, error) {
 		return nil, fmt.Errorf("save tweak: %w", err)
 	}
 	return map[string]any{"recipe_id": r.ID}, nil
+}
+
+// SaveMeal puts the meal's recipe in the library ("Save to recipes"). A
+// meal without a recipe is saved as one first. Saving again changes nothing.
+func (s *Service) SaveMeal(ctx context.Context, sc domain.Scope, mealID uuid.UUID) (domain.Recipe, error) {
+	q := db.New(s.pool)
+	var row db.Recipe
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		qt := q.WithTx(tx)
+		m, err := qt.GetMeal(ctx, db.GetMealParams{ID: mealID, HouseholdID: sc.HouseholdID})
+		if err != nil {
+			return notFound("meal", err)
+		}
+		if !m.RecipeID.Valid {
+			meal, err := loadMeal(ctx, qt, m)
+			if err != nil {
+				return err
+			}
+			if err := linkRecipe(ctx, qt, sc.HouseholdID, mealID, recipes.MealToJSON(meal)); err != nil {
+				return err
+			}
+			if m, err = qt.GetMeal(ctx, db.GetMealParams{ID: mealID, HouseholdID: sc.HouseholdID}); err != nil {
+				return notFound("meal", err)
+			}
+		}
+		if _, err := qt.SetRecipeInLibrary(ctx, db.SetRecipeInLibraryParams{ID: m.RecipeID.UUID, HouseholdID: sc.HouseholdID}); err != nil {
+			return fmt.Errorf("save to library: %w", err)
+		}
+		if row, err = qt.GetRecipe(ctx, db.GetRecipeParams{ID: m.RecipeID.UUID, HouseholdID: sc.HouseholdID}); err != nil {
+			return notFound("recipe", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return domain.Recipe{}, err
+	}
+	s.publishEvent(sc.HouseholdID, events.Event{Kind: events.RecipeUpdated, RecipeID: row.ID})
+	return recipes.RecipeFromDB(row)
 }
 
 // insertRecipeMeal adds a library recipe to a plan as a meal.

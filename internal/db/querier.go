@@ -41,6 +41,7 @@ type Querier interface {
 	CreateMember(ctx context.Context, arg CreateMemberParams) (Member, error)
 	CreatePlan(ctx context.Context, arg CreatePlanParams) (Plan, error)
 	CreateProfile(ctx context.Context, householdID uuid.UUID) error
+	// A recipe the household added or a tweaked version: both join the library.
 	CreateRecipe(ctx context.Context, arg CreateRecipeParams) (Recipe, error)
 	CreateRecipeDraft(ctx context.Context, arg CreateRecipeDraftParams) (RecipeDraft, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
@@ -79,6 +80,9 @@ type Querier interface {
 	GetInvite(ctx context.Context, arg GetInviteParams) (Invite, error)
 	GetInviteByTokenHash(ctx context.Context, tokenHash []byte) (Invite, error)
 	GetJob(ctx context.Context, arg GetJobParams) (Job, error)
+	// The library recipe a planned meal of this type and title reuses:
+	// the original before a tweaked version, then the newest.
+	GetLibraryRecipeByTitle(ctx context.Context, arg GetLibraryRecipeByTitleParams) (Recipe, error)
 	GetListItem(ctx context.Context, arg GetListItemParams) (ListItem, error)
 	GetMeal(ctx context.Context, arg GetMealParams) (Meal, error)
 	GetMember(ctx context.Context, id uuid.UUID) (Member, error)
@@ -114,6 +118,8 @@ type Querier interface {
 	ListIngredientsForPlan(ctx context.Context, arg ListIngredientsForPlanParams) ([]Ingredient, error)
 	ListInvites(ctx context.Context, householdID uuid.UUID) ([]Invite, error)
 	ListItemsForPlan(ctx context.Context, arg ListItemsForPlanParams) ([]ListItem, error)
+	// Titles in the library, for the planning prompt.
+	ListLibraryTitles(ctx context.Context, householdID uuid.UUID) ([]ListLibraryTitlesRow, error)
 	// Suggested day (meals without one last), then meal type, then position.
 	ListMeals(ctx context.Context, arg ListMealsParams) ([]Meal, error)
 	ListMemberEmails(ctx context.Context, householdID uuid.UUID) ([]ListMemberEmailsRow, error)
@@ -157,9 +163,12 @@ type Querier interface {
 	SetListItemHaveIt(ctx context.Context, arg SetListItemHaveItParams) (ListItem, error)
 	SetMealPosition(ctx context.Context, arg SetMealPositionParams) error
 	SetMealRecipe(ctx context.Context, arg SetMealRecipeParams) error
+	// A meal marked cooked puts its recipe in the library.
+	SetMealRecipeInLibrary(ctx context.Context, arg SetMealRecipeInLibraryParams) error
 	SetMemberName(ctx context.Context, arg SetMemberNameParams) error
 	// The photo is dropped as soon as it has been read.
 	SetRecipeDraftParsed(ctx context.Context, arg SetRecipeDraftParsedParams) error
+	SetRecipeInLibrary(ctx context.Context, arg SetRecipeInLibraryParams) (int64, error)
 	SetServerAdmin(ctx context.Context, arg SetServerAdminParams) error
 	SetSetupDone(ctx context.Context, householdID uuid.UUID) error
 	SwitchSessionHousehold(ctx context.Context, arg SwitchSessionHouseholdParams) error
@@ -168,6 +177,7 @@ type Querier interface {
 	UpdateMemberPassword(ctx context.Context, arg UpdateMemberPasswordParams) error
 	UpdateProfile(ctx context.Context, arg UpdateProfileParams) (Profile, error)
 	// A meal Claude suggests again reuses its recipe (same type and title).
+	// It is not in the library until it is cooked or saved.
 	UpsertClaudeRecipe(ctx context.Context, arg UpsertClaudeRecipeParams) (uuid.UUID, error)
 	// Rebuilds keep ticks: on conflict only the text/section change, never checked.
 	// An item that leaves the pantry forgets its Have it / Buy answer.

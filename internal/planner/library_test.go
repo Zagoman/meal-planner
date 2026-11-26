@@ -153,7 +153,7 @@ func TestLibrary(t *testing.T) {
 	if _, err := d.plans.SetOutcome(ctx, d.a, plan.Meals[1].ID, domain.OutcomeInput{Rating: 3}); err != nil {
 		t.Fatal(err)
 	}
-	// Every Claude meal is in the library; a meal suggested again reuses it.
+	// Both cooked meals are in the library; a meal suggested again reuses it.
 	d.draft(t)
 	all, err := d.plans.Search(ctx, d.a, "", domain.FilterAll)
 	if err != nil || len(all) != 2 {
@@ -224,10 +224,10 @@ func TestAddToNextWeekWithoutDraft(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := newDraftEnv(t, weekA(t), weekA(t), weekA(t))
-	d.confirmed(t)
-	lib, _ := d.plans.Search(ctx, d.a, "rice", domain.FilterAll)
+	plan := d.confirmed(t)
+	rice := *plan.Meals[1].RecipeID // a planned recipe, not in the library: still addable
 	// Saturday: this week is confirmed, so the empty draft is for next week.
-	dm, err := d.plans.AddToNextWeek(ctx, d.a, lib[0].ID, domain.FromLibrary)
+	dm, err := d.plans.AddToNextWeek(ctx, d.a, rice, domain.FromLibrary)
 	if err != nil || dm.AddedFrom != domain.FromLibrary {
 		t.Fatalf("add: %+v %v", dm, err)
 	}
@@ -263,8 +263,7 @@ func TestLibraryCrossHousehold(t *testing.T) {
 	ctx := context.Background()
 	d := newDraftEnv(t, weekA(t))
 	plan := d.confirmed(t)
-	lib, _ := d.plans.Search(ctx, d.a, "", domain.FilterAll)
-	id := lib[0].ID
+	id := *plan.Meals[0].RecipeID
 	nf := func(name string, err error) {
 		t.Helper()
 		if !errors.Is(err, domain.ErrNotFound) {

@@ -69,12 +69,14 @@ const (
 	SourceManual RecipeSource = "manual"
 )
 
-// Label is "Planned" (made with the plans) or "Ours". It never names the AI provider.
+// Label is "Our own" for a recipe the household added (photo, text, link
+// or by hand) and "" for one that came from the plans. It never names the
+// AI provider.
 func (s RecipeSource) Label() string {
 	if s == SourceClaude || s == "" {
-		return "Planned"
+		return ""
 	}
-	return "Ours"
+	return "Our own"
 }
 
 // RecipeStats are a recipe's ratings across every time it was planned.

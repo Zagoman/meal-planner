@@ -29,6 +29,7 @@ type PromptInput struct {
 	Feedback []FeedbackLine // last 8 weeks, newest first
 	Request  string         // what the user typed
 	Banned   []string       // meals not to plan, with the reason
+	Library  []string       // the household's recipes ("dinner: \"Fish soup\""), to reuse
 }
 
 // SwapInput adds what replacing one meal needs.
@@ -50,7 +51,8 @@ Rules for every meal:
 - Ingredients: "name" as written in the recipe; "normalized_name" singular, lowercase, without preparation ("red onion", not "red onions, sliced"); "qty" a number (0 for "to taste"); "unit" one of g, kg, ml, dl, l, tsp, tbsp, pcs, or a count noun such as clove or can; "section" one of the household's shop section keys listed below, exactly as written.
 - Quantities and "servings" are for the household's number of people; baking makes one batch.
 - Steps are short and in cooking order; "timer_min" is set when the step has a wait or cook time, otherwise null.
-- Follow the household profile strictly. Never use an ingredient on the avoid list, not even as a garnish or in a sauce.`
+- Follow the household profile strictly. Never use an ingredient on the avoid list, not even as a garnish or in a sauce.
+- Do not add default sides or accompaniments (such as "served with rugbrød" or a side salad) to a title or its ingredients; include a side only when the dish needs it or the household asks.`
 
 const babyRules = `Baby portions are ON: every meal has exactly one step with "baby_portion": true that takes out the baby's portion. It comes before any step that adds salt, stock, bouillon, cheese or other salty seasoning, and no step before it may add them. List those later additions in "after_baby_portion".`
 
@@ -77,6 +79,7 @@ func BuildPlanPrompt(in PromptInput) string {
 	writeProfile(&b, in.Profile, in.Sections)
 	writeFeedback(&b, in.Feedback)
 	writeBanned(&b, in.Banned)
+	writeLibrary(&b, in.Library)
 	fmt.Fprintf(&b, "\n## Task\nPlan the coming week: %s. Exactly that many meals of each type, no more and no fewer. Dinners match the protein mix where possible.\n",
 		targetsText(in.Profile.MealTargets))
 	writeRequest(&b, in.Request)
@@ -89,6 +92,7 @@ func BuildSwapPrompt(in SwapInput) string {
 	writeProfile(&b, in.Profile, in.Sections)
 	writeFeedback(&b, in.Feedback)
 	writeBanned(&b, in.Banned)
+	writeLibrary(&b, in.Library)
 	fmt.Fprintf(&b, "\n## Task\nReturn exactly one %s", in.MealType)
 	if in.Day != "" {
 		fmt.Fprintf(&b, " with day %s", in.Day)
@@ -135,6 +139,19 @@ func writeProfile(b *strings.Builder, p domain.Profile, sections []domain.Sectio
 	b.WriteString("\n## Shop section keys (use exactly these for \"section\")\n")
 	for _, s := range sections {
 		fmt.Fprintf(b, "- %s (%s)\n", s.Key, s.Name)
+	}
+}
+
+// writeLibrary lists the household's recipes so a plan reuses one (same
+// title, so it links to that recipe) instead of inventing a near-copy.
+func writeLibrary(b *strings.Builder, library []string) {
+	if len(library) == 0 {
+		return
+	}
+	b.WriteString("\n## The household's recipes\n")
+	b.WriteString("When a meal would be the same dish as or a close variation of one of these, reuse it with exactly this title instead of inventing a near-copy under a new name. New dishes are welcome; do not plan two variations of one dish.\n")
+	for _, r := range library {
+		fmt.Fprintf(b, "- %s\n", r)
 	}
 }
 
@@ -263,6 +280,7 @@ func BuildAskPrompt(in PromptInput, current []MealLine) string {
 	writeProfile(&b, in.Profile, in.Sections)
 	writeFeedback(&b, in.Feedback)
 	writeBanned(&b, in.Banned)
+	writeLibrary(&b, in.Library)
 	b.WriteString("\n## Current draft for the week\n")
 	for _, m := range current {
 		fmt.Fprintf(&b, "- %s\n", m)
@@ -282,6 +300,7 @@ func BuildReplacePrompt(in PromptInput, replace []MealLine, keep []string) strin
 	writeProfile(&b, in.Profile, in.Sections)
 	writeFeedback(&b, in.Feedback)
 	writeBanned(&b, in.Banned)
+	writeLibrary(&b, in.Library)
 	fmt.Fprintf(&b, "\n## Task\nThe household disliked these %d meals. Return exactly %d new meals, one for each, with the same meal_type and day, clearly different from the meal it replaces:\n",
 		len(replace), len(replace))
 	for _, m := range replace {

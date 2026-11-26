@@ -163,7 +163,14 @@ func (h *handlers) recipesPage(w http.ResponseWriter, r *http.Request) {
 		h.render(w, r, http.StatusOK, RecipeResults(list))
 		return
 	}
-	h.render(w, r, http.StatusOK, RecipesPage(q, filter, list))
+	all := list
+	if q != "" || filter != domain.FilterAll {
+		if all, err = h.svc.Library.Search(r.Context(), scope(r), "", domain.FilterAll); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+	}
+	h.render(w, r, http.StatusOK, RecipesPage(q, filter, list, libraryFilters(all)))
 }
 
 func recipeID(r *http.Request) (uuid.UUID, error) {

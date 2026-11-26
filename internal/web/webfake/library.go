@@ -41,7 +41,18 @@ func (h *household) lib() *libraryState {
 	return h.library
 }
 
-// syncLibrary adds every planned meal's title to the library. Callers hold s.mu.
+// putInLibrary puts a planned meal's recipe in the library (cooked or
+// saved). Callers hold s.mu.
+func (h *household) putInLibrary(title string) *libRecipe {
+	r := h.recipeFor(title)
+	if r != nil {
+		r.InLibrary = true
+	}
+	return r
+}
+
+// syncLibrary makes every planned meal's title a recipe; it is not in the
+// library until cooked or saved. Callers hold s.mu.
 func (h *household) syncLibrary() {
 	l := h.lib()
 	for _, m := range h.meals {
@@ -152,6 +163,9 @@ func (s *Store) SetOutcome(_ context.Context, sc domain.Scope, mealID uuid.UUID,
 		return domain.RateMeal{}, &domain.ValidationError{Problems: []string{"rate the meal or mark it not cooked first"}}
 	}
 	l.outcomes[mealID] = o
+	if o.Status == domain.Cooked {
+		h.putInLibrary(m.Title)
+	}
 	return domain.RateMeal{Meal: m, Outcome: &o}, nil
 }
 
@@ -171,6 +185,9 @@ func (s *Store) Search(_ context.Context, sc domain.Scope, q string, filter doma
 	q = strings.ToLower(strings.TrimSpace(q))
 	out := []domain.RecipeSummary{}
 	for _, r := range h.lib().recipes {
+		if !r.InLibrary {
+			continue
+		}
 		sum := domain.RecipeSummary{
 			ID: r.ID, Title: r.Meal.Title, MealType: r.Meal.MealType, Minutes: r.Meal.Minutes, Source: r.Source,
 			Tweaked: r.ParentID != nil, RecipeStats: h.stats(r.Meal.Title),
@@ -238,7 +255,7 @@ func (s *Store) RequestTweak(_ context.Context, sc domain.Scope, recipeID uuid.U
 			parent := r.ID
 			meal := r.Meal
 			meal.Title += " (tweaked)"
-			v := &libRecipe{Recipe: domain.Recipe{ID: uuid.New(), Source: r.Source, ParentID: &parent, Meal: meal, CreatedAt: time.Now()}}
+			v := &libRecipe{Recipe: domain.Recipe{ID: uuid.New(), Source: r.Source, ParentID: &parent, InLibrary: true, Meal: meal, CreatedAt: time.Now()}}
 			h.lib().recipes = append(h.lib().recipes, v)
 			r.tweakedID = &v.ID
 		}
@@ -348,4 +365,23 @@ func (h *household) rateFirst() bool {
 		}
 	}
 	return false
+}
+
+// SaveMeal puts a planned meal's recipe in the library.
+func (s *Store) SaveMeal(_ context.Context, sc domain.Scope, mealID uuid.UUID) (domain.Recipe, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h, err := s.hh(sc)
+	if err != nil {
+		return domain.Recipe{}, err
+	}
+	m, ok := h.meals[mealID]
+	if !ok {
+		return domain.Recipe{}, fmt.Errorf("save meal: %w", domain.ErrNotFound)
+	}
+	r := h.putInLibrary(m.Title)
+	if r == nil {
+		return domain.Recipe{}, fmt.Errorf("save meal: recipe %w", domain.ErrNotFound)
+	}
+	return r.Recipe, nil
 }

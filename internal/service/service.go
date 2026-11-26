@@ -82,11 +82,13 @@ type Outcomes interface {
 	SetOutcome(ctx context.Context, s domain.Scope, mealID uuid.UUID, in domain.OutcomeInput) (domain.RateMeal, error)
 }
 
-// Library is the household's recipes: every meal Claude planned, tweaked
-// versions, and (from window 5) recipes the household adds.
+// Library is the household's recipes. Every planned meal links to a
+// recipe, but only recipes the household cooked, saved from a meal, added
+// or tweaked are in the library (in_library) and listed by Search. The
+// rest still open by id (past plans, "not cooked last week").
 type Library interface {
-	// Search lists recipes matching q (title or ingredient) and a filter:
-	// "all", "rated4", "own" or a meal type.
+	// Search lists library recipes matching q (title or ingredient) and a
+	// filter: "all", "rated4", "own" or a meal type.
 	Search(ctx context.Context, s domain.Scope, q string, filter domain.RecipeFilter) ([]domain.RecipeSummary, error)
 	RecipeDetail(ctx context.Context, s domain.Scope, recipeID uuid.UUID) (domain.RecipeDetail, error)
 	// RequestTweak queues a tweak job: Claude changes the recipe and the
@@ -108,6 +110,9 @@ type Library interface {
 	SaveImport(ctx context.Context, s domain.Scope, draftID uuid.UUID, r domain.MealJSON) (domain.Recipe, error)
 	// CreateRecipe saves a recipe written by hand.
 	CreateRecipe(ctx context.Context, s domain.Scope, r domain.MealJSON) (domain.Recipe, error)
+	// SaveMeal puts a meal's recipe in the library ("Save to recipes"),
+	// linking the meal to a recipe first if it has none. Idempotent.
+	SaveMeal(ctx context.Context, s domain.Scope, mealID uuid.UUID) (domain.Recipe, error)
 	// SetPhoto stores (or replaces) the family's photo of a recipe; jpeg
 	// is already resized by imagefit. PhotoAt is nil without a photo.
 	SetPhoto(ctx context.Context, s domain.Scope, recipeID uuid.UUID, jpeg []byte) error
