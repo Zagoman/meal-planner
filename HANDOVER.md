@@ -489,4 +489,8 @@ Added to the design handover after the first version: the splash.
   gone and tappable after it fades, back in a new session, reduced motion.
   The other e2e tests mark it seen.
 
+**Deployed** 2026-11-26 as `8abc26764659`. Dump first:
+`mealplanner-20261126-202634.dump`. No migration; plans and list unchanged
+(1 active, 1 draft from the weekly schedule, 6 archived, 188 list items).
+
 **Known issues**: G-48 in GAPS.md.
